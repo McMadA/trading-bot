@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Bot Logs</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        header {
+            background-color: #4caf50;
+            color: white;
+            text-align: center;
+            padding: 1rem 0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 20px auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .log-container {
+            padding: 20px;
+            max-height: 500px;
+            overflow-y: auto;
+            border-top: 1px solid #ccc;
+        }
+        .log-message {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f9f9f9;
+            border-left: 4px solid #4caf50;
+            font-size: 14px;
+            word-wrap: break-word;
+        }
+        footer {
+            text-align: center;
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 10px;
+            padding: 10px 0;
+            border-top: 1px solid #ddd;
+        }
+        @media (max-width: 768px) {
+            .container {
+                width: 95%;
+            }
+        }
+    </style>
+    <meta http-equiv="refresh" content="5"> <!-- Refresh every 5 seconds -->
+</head>
+<body>
+    <header>
+        <h1>Trading Bot Logs</h1>
+    </header>
+    <div class="container">
+        <div class="log-container">
+            <pre class="log-message">{{ logs }}</pre>
+        </div>
+    </div>
+    <footer>
+        <p>&copy; 2024 Trading Bot by Allardos</p>
+    </footer>
+</body>
+</html>

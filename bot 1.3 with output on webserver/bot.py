@@ -10,7 +10,7 @@ import threading
 API_KEY = ""
 API_SECRET = ""
 SYMBOL = "ADA/USDT"  # Pas aan naar jouw gewenste handelspaar
-TIMEFRAME = "30m"  # Tijdframe van candles
+TIMEFRAME = "15m"  # Tijdframe van candles
 TRADE_ASSET = "USDT"  # Gebruik de beschikbare USDT voor de order
 
 # Verbind met MEXC
@@ -40,7 +40,7 @@ def home():
 
 
 
-def wait_until_next_candle(interval_minutes=30):
+def wait_until_next_candle(interval_minutes=15):
     """Wacht tot het begin van de volgende candle op een specifiek interval."""
     now = datetime.now()
     # Bereken het aantal seconden tot het volgende interval
@@ -142,7 +142,7 @@ def main():
     while True:
         try:
             # Wacht tot het begin van de volgende candle
-            wait_until_next_candle(interval_minutes=30)
+            wait_until_next_candle(interval_minutes=15)
             add_log(f"Candle tijd: {datetime.now()}")
 
             # Data ophalen

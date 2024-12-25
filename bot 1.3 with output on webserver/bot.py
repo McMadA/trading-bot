@@ -7,8 +7,8 @@ import threading
 
 #v1.1
 # Configuratie
-API_KEY = ""
-API_SECRET = ""
+API_KEY = "mx0vgldmeNxqFYVVgZ"
+API_SECRET = "22f7ef04611a44c6b42774ae8deb99b2"
 SYMBOL = "ADA/USDT"  # Pas aan naar jouw gewenste handelspaar
 TIMEFRAME = "15m"  # Tijdframe van candles
 TRADE_ASSET = "USDT"  # Gebruik de beschikbare USDT voor de order
@@ -156,30 +156,30 @@ def main():
             last_candle = data.iloc[-2]
             previous_candle = data.iloc[-3]
 
-            add_log(f"Candle was onder en nu sluit boven EMA20: "
-                    f"{previous_candle['close'] < previous_candle['ema20'] and last_candle['close'] > last_candle['ema20']}")
-            add_log(f"Candle was boven en nu sluit onder eMA20: "
-                    f"{previous_candle['close'] > previous_candle['ema20'] and last_candle['close'] < last_candle['ema20']}")
-            add_log(f"{previous_candle['close']} is lager dan {previous_candle['ema20']}, "
-                    f"en {last_candle['close']} is hoger dan {last_candle['ema20']}")
-            add_log(f"{previous_candle['close']} is hoger dan {previous_candle['ema20']}, "
-                    f"en {last_candle['close']} is lager dan {last_candle['ema20']}")
+            add_log(f"Candle was onder en nu sluit boven ema10: "
+                    f"{previous_candle['close'] < previous_candle['ema10'] and last_candle['close'] > last_candle['ema10']}")
+            add_log(f"Candle was boven en nu sluit onder ema10: "
+                    f"{previous_candle['close'] > previous_candle['ema10'] and last_candle['close'] < last_candle['ema10']}")
+            add_log(f"{previous_candle['close']} is lager dan {previous_candle['ema10']}, "
+                    f"en {last_candle['close']} is hoger dan {last_candle['ema10']}")
+            add_log(f"{previous_candle['close']} is hoger dan {previous_candle['ema10']}, "
+                    f"en {last_candle['close']} is lager dan {last_candle['ema10']}")
 
-            # Koop bij bullish crossover (prijs sluit boven eMA20)
-            if previous_candle["close"] < previous_candle["ema20"] and last_candle["close"] > last_candle["ema20"]:
+            # Koop bij bullish crossover (prijs sluit boven ema10)
+            if previous_candle["close"] < previous_candle["ema10"] and last_candle["close"] > last_candle["ema10"]:
                 available_balance = get_available_balance(TRADE_ASSET)
                 if available_balance > 2:  # Zorg ervoor dat je voldoende USDT hebt om te kopen
                     amount_to_buy = available_balance / last_candle["close"]  # Bereken hoeveel ADA je kunt kopen
                     place_order("buy", SYMBOL, amount_to_buy)
                     add_log(f"Gekocht {amount_to_buy} ADA voor {available_balance} USDT.")
 
-            # Verkoop bij bearish crossover (prijs sluit onder eMA20)
-            elif previous_candle["close"] > previous_candle["ema20"] and last_candle["close"] < last_candle["ema20"]:
+            # Verkoop bij bearish crossover (prijs sluit onder ema10)
+            elif previous_candle["close"] > previous_candle["ema10"] and last_candle["close"] < last_candle["ema10"]:
                 available_balance = get_available_balance("ADA")
                 add_log(f"Beschikbaar saldo ADA: {available_balance}")
                 if available_balance > 0:
                     place_order("sell", SYMBOL, available_balance)  # Verkoop de volledige ADA positie
-                    add_log(f"Verkocht {available_balance} ADA voor USDT vanwege eMA20 verandering.")
+                    add_log(f"Verkocht {available_balance} ADA voor USDT vanwege ema10 verandering.")
 
         except Exception as e:
             add_log(f"Fout in de hoofdloop: {e}")

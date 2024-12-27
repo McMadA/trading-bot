@@ -9,8 +9,8 @@ import threading
 
 #v1.1
 # Configuratie
-API_KEY = "5DNOpd7WcfckW8oF7g"
-API_SECRET = "EI4JCUVohmBrIln8Q7TdPjSo7zVFON2vAvyl"
+API_KEY = ""
+API_SECRET = ""
 SYMBOL = "ADA/USDT"  # Pas aan naar jouw gewenste handelspaar
 TIMEFRAME = "15m"  # Tijdframe van candles
 TRADE_ASSET = "USDT"  # Gebruik de beschikbare USDT voor de order

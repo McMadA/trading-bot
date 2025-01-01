@@ -13,28 +13,21 @@ exchange = ccxt.bybit({
 })
 
 
-def get_margin_balance():
+def get_available_balance(asset):
     """Haal de margin account balans op"""
     try:
-        # Haal de balans op voor de margin account
+        # Haal de balans op voor de spot account
         balance = exchange.fetch_balance({'type': 'margin'})  # Haal de margin account balans op
-        return balance
+        available_balance = balance['free'].get(asset, 0)  # Verkrijg het beschikbare saldo
+        return available_balance
     except Exception as e:
         print(f"Fout bij het ophalen van de balans: {e}")
         return None
 
 def main():
-    try:
+    
         # Verkrijg de margin account balans
-        balance = get_margin_balance()
-        if balance:
-            print("margin Account Balans:")
-            for asset, info in balance['total'].items():
-                print(f"{asset}: {info}")
-        else:
-            print("Kan de balans niet ophalen.")
-    except Exception as e:
-        print(f"Fout in de hoofdloop: {e}")
+    print(f"Beschikbaar: {get_available_balance('ADA')}")
 
 if __name__ == "__main__":
     main()

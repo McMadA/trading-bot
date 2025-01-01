@@ -2,6 +2,10 @@ import ccxt
 from pybit.unified_trading import HTTP
 
 
+
+
+
+
 API_KEY = ""
 API_SECRET = ""
 
@@ -9,8 +13,6 @@ exchange = ccxt.bybit({
     "apiKey": API_KEY,
     "secret": API_SECRET,
 })
-
-# Initialize Bybit session
 session = HTTP(
     testnet=False,  # Set to False if you're using the mainnet
     api_key=API_KEY,
@@ -36,8 +38,6 @@ def toggle_margin_trade():
         return response
     except Exception as e:
         print(f"Error setting margin trading mode: {e}")
-
-
 def switch_cross_isolated_mode():
     """Switch between cross and isolated margin mode."""
     try:
@@ -52,9 +52,6 @@ def switch_cross_isolated_mode():
         return response
     except Exception as e:
         print(f"Error setting margin mode: {e}")
-
-
-
 def set_leverage():
     """
     Set leverage for Bybit trading using pybit.
@@ -71,7 +68,6 @@ def set_leverage():
         return response
     except Exception as e:
         print(f"Error setting leverage: {e}")
-
 
 def create_order():
     """Plaats een marktorder"""
@@ -92,6 +88,11 @@ def main():
     toggle_margin_trade()
     switch_cross_isolated_mode()
     set_leverage()
+
+
+
+
+
     create_order()
 
 if __name__ == "__main__":

@@ -9,8 +9,8 @@ import time
 
 #v1.1
 # Configuratie
-API_KEY = "vyq7FtlXm1CEbjL17s"
-API_SECRET = "fv5622xa4q5IH7zQdqDyXh1JJO84sNFUy4Aq"
+API_KEY = ""
+API_SECRET = ""
 SYMBOL = "ADAUSDT"  # Pas aan naar jouw gewenste handelspaar
 TIMEFRAME = "15m"  # Tijdframe van candles
 TRADE_ASSET = "USDT"  # Gebruik de beschikbare USDT voor de order
@@ -79,16 +79,16 @@ def set_leverage():
         print(f"Error setting leverage: {e}")
 
 
-# def get_available_balance(asset):
-#     """Haal de margin account balans op"""
-#     try:
-#         # Haal de balans op voor de spot account
-#         balance = exchange.fetch_balance({'type': 'margin'})  # Haal de margin account balans op
-#         available_balance = balance['free'].get(asset, 0)  # Verkrijg het beschikbare saldo
-#         return available_balance
-#     except Exception as e:
-#         print(f"Fout bij het ophalen van de balans: {e}")
-#         return None
+def get_available_balance(asset):
+    """Haal de margin account balans op"""
+    try:
+        # Haal de balans op voor de spot account
+        balance = exchange.fetch_balance({'type': 'margin'})  # Haal de margin account balans op
+        available_balance = balance['free'].get(asset, 0)  # Verkrijg het beschikbare saldo
+        return available_balance
+    except Exception as e:
+        print(f"Fout bij het ophalen van de balans: {e}")
+        return None
 
 
 def fetch_data(symbol, timeframe, limit=49, retries=3, delay=5):

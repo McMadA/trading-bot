@@ -6,8 +6,8 @@ from pybit.unified_trading import HTTP
 
 
 
-API_KEY = ""
-API_SECRET = ""
+API_KEY = "8JipCzXe9HTR6IRQC8"
+API_SECRET = "xaH4j3bL3KPUkUdUjTTWRY6l3lS4XLUQ57oh"
 
 exchange = ccxt.bybit({
     "apiKey": API_KEY,
@@ -21,8 +21,7 @@ session = HTTP(
 
 symbol = "ADA/USDT"
 type = "market"
-side = "buy"
-amount = 20
+amount = 2
 price = 1.0
 leverage = 10
 
@@ -69,7 +68,7 @@ def set_leverage():
     except Exception as e:
         print(f"Error setting leverage: {e}")
 
-def create_order():
+def create_order(side):
     """Plaats een marktorder"""
     print(f"{side} order voor {amount} {symbol}")
     try:
@@ -93,7 +92,7 @@ def main():
 
 
 
-    create_order()
+    create_order("sell")
 
 if __name__ == "__main__":
     main()

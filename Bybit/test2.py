@@ -6,8 +6,8 @@ import time
 from ta.trend import EMAIndicator
 
 
-API_KEY = "8JipCzXe9HTR6IRQC8"
-API_SECRET = "xaH4j3bL3KPUkUdUjTTWRY6l3lS4XLUQ57oh"
+API_KEY = ""
+API_SECRET = ""
 
 exchange = ccxt.bybit({
     "apiKey": API_KEY,
@@ -21,8 +21,8 @@ session = HTTP(
 
 symbol = "ADA/USDT"
 timeframe = "15m"
-type = "limit"
-amount = 20
+type = "market"
+amount = 45
 price = 1.0
 leverage = 5
 
@@ -108,7 +108,6 @@ def fetch_data(symbol, timeframe, limit=49, retries=3, delay=5):
         time.sleep(delay)
     print("Maximale pogingen bereikt. Geen data ontvangen.")
     return None
-
 def calculate_ema(data, period=10):
     """Bereken EMA op sluitprijzen"""
     ema = EMAIndicator(data["close"], window=period)
@@ -133,11 +132,12 @@ def create_order(side):
 
 def close_position(side):
     """Sluit een bestaande positie."""
-    opposite_side = "sell" if side == "buy" else "buy"
     print(f"Sluiten van {side} positie ...")
     try:
-        params= {"reduceOnly": True}
-        order = exchange.create_order(symbol, type, opposite_side, amount, price, params)
+        params= {"reduceOnly": True,
+                 "isLeverage": "1"}
+
+        order = exchange.create_order(symbol, type, side, amount, price, params)
         print(f"Positie gesloten:  {amount} {symbol}")
         return order
     except Exception as e:
@@ -162,52 +162,26 @@ def main():
                 continue
             data = calculate_ema(data)
 
-            last_candle = data.iloc[-1]
             previous_candle = data.iloc[-2]
             previous2_candle = data.iloc[-3]
-            previous3_candle = data.iloc[-4]
-            previous4_candle = data.iloc[-5]
-            previous5_candle = data.iloc[-6]
-            previous6_candle = data.iloc[-7]
 
-            print(f"Last candle close: {last_candle['close']}")
-            print(f"Last candle ema10: {last_candle['ema10']}")
-            print(f"Previous candle close: {previous_candle['close']}")
-            print(f"Previous candle ema10: {previous_candle['ema10']}")
-            print(f"Previous2 candle close: {previous2_candle['close']}")
-            print(f"Previous2 candle ema10: {previous2_candle['ema10']}")
-            print(f"Previous3 candle close: {previous3_candle['close']}")
-            print(f"Previous3 candle ema10: {previous3_candle['ema10']}")
-            print(f"Previous4 candle close: {previous4_candle['close']}")
-            print(f"Previous4 candle ema10: {previous4_candle['ema10']}")
-            print(f"Previous5 candle close: {previous5_candle['close']}")
-            print(f"Previous5 candle ema10: {previous5_candle['ema10']}")
-            print(f"Previous6 candle close: {previous6_candle['close']}")
-            print(f"Previous6 candle ema10: {previous6_candle['ema10']}")
+            print(f"éénnalaatste candle was {previous2_candle['close']} en is lager dan {previous2_candle['ema10']}, "
+                    f"en laatste candle was {previous_candle['close']} en is hoger dan {previous_candle['ema10']}")
+            print("of")
+            print(f"éénnalaatste candle was {previous2_candle['close']} en is hoger dan {previous2_candle['ema10']}, "
+                    f"en laatste candle was {previous_candle['close']} en is lager dan {previous_candle['ema10']}")
 
-
-            print(f"Candle was onder en nu sluit boven ema10: "
-                    f"{previous2_candle['close'] < previous2_candle['ema10'] and previous_candle['close'] > previous_candle['ema10']}")
-            print(f"Candle was boven en nu sluit onder ema10: "
-                    f"{previous2_candle['close'] > previous2_candle['ema10'] and previous_candle['close'] < previous_candle['ema10']}")
-
-
-            print(f"{previous2_candle['close']} is lager dan {previous2_candle['ema10']}, "
-                    f"en {previous_candle['close']} is hoger dan {previous_candle['ema10']}")
-            print(f"{previous2_candle['close']} is hoger dan {previous2_candle['ema10']}, "
-                    f"en {previous_candle['close']} is lager dan {previous_candle['ema10']}")
-            #als candle sluit boven de ema10 vanaf onder dan kopen
             if previous2_candle["close"] < previous2_candle["ema10"] and previous_candle["close"] > previous_candle["ema10"]:
                 print("Koop signaal")
-                if current_position == "short":
-                    close_position("short")
+                if current_position == "sell":
+                    close_position("buy")
                 create_order("buy")
                 current_position = "long"
 
             elif previous2_candle["close"] > previous2_candle["ema10"] and previous_candle["close"] < previous_candle["ema10"]:
                 print("Verkoop signaal")
-                if current_position == "long":
-                    close_position("long")
+                if current_position == "buy":
+                    close_position("sell")
                 create_order("sell")
                 current_position = "short"
 

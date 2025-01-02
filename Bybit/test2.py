@@ -6,8 +6,8 @@ import time
 from ta.trend import EMAIndicator
 
 
-API_KEY = "8JipCzXe9HTR6IRQC8"
-API_SECRET = "xaH4j3bL3KPUkUdUjTTWRY6l3lS4XLUQ57oh"
+API_KEY = ""
+API_SECRET = ""
 
 exchange = ccxt.bybit({
     "apiKey": API_KEY,

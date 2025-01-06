@@ -6,8 +6,8 @@ import time
 from ta.trend import EMAIndicator
 
 
-API_KEY = ""
-API_SECRET = ""
+API_KEY = "8JipCzXe9HTR6IRQC8"
+API_SECRET = "xaH4j3bL3KPUkUdUjTTWRY6l3lS4XLUQ57oh"
 
 exchange = ccxt.bybit({
     "apiKey": API_KEY,
@@ -162,8 +162,8 @@ def main():
                 continue
             data = calculate_ema(data)
 
-            previous_candle = data.iloc[-2]
-            previous2_candle = data.iloc[-3]
+            previous_candle = data.iloc[-1]
+            previous2_candle = data.iloc[-2]
 
             print(f"éénnalaatste candle was {previous2_candle['close']} en is lager dan {previous2_candle['ema10']}, "
                     f"en laatste candle was {previous_candle['close']} en is hoger dan {previous_candle['ema10']}")
@@ -173,17 +173,19 @@ def main():
 
             if previous2_candle["close"] < previous2_candle["ema10"] and previous_candle["close"] > previous_candle["ema10"]:
                 print("Koop signaal")
+                print(current_position)
                 if current_position == "sell":
                     close_position("buy")
                 create_order("buy")
-                current_position = "long"
+                current_position = "buy"
 
             elif previous2_candle["close"] > previous2_candle["ema10"] and previous_candle["close"] < previous_candle["ema10"]:
                 print("Verkoop signaal")
+                print(current_position)
                 if current_position == "buy":
                     close_position("sell")
                 create_order("sell")
-                current_position = "short"
+                current_position = "sell"
 
             else:
                 print("Geen signaal")

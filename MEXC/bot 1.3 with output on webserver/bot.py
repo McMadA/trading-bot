@@ -143,6 +143,7 @@ def main():
         try:
             # Wacht tot het begin van de volgende candle
             wait_until_next_candle(interval_minutes=15)
+            time.sleep(2.5)
             add_log(f"Candle tijd: {datetime.now()}")
 
             # Data ophalen

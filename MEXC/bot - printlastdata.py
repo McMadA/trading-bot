@@ -63,32 +63,23 @@ def main():
     # Data ophalen
     data = fetch_data(SYMBOL, TIMEFRAME)
     if data is None:
-        print("Geen gegevens ontvangen, opnieuw proberen.")
+        print("Geen data opgehaald. Controleer connectiviteit en API-permissies.")
+        return
+    else:
+        print(data.head())  # Print a preview of the fetched data
+
+
     data = calculate_ema(data)
 
     # Controleer laatste candle
     last_candle = data.iloc[-2]
     previous_candle = data.iloc[-3]
     previous2_candle = data.iloc[-4]
-    previous3_candle = data.iloc[-5]
-    previous4_candle = data.iloc[-6]
-    previous5_candle = data.iloc[-7]
-    previous6_candle = data.iloc[-8]
 
-    print(last_candle['close'])
-    print(last_candle['ema10'])
-    print(previous_candle['close'])
-    print(previous_candle['ema10'])
-    print(previous2_candle['close'])
-    print(previous2_candle['ema10'])
-    print(previous3_candle['close'])
-    print(previous3_candle['ema10'])
-    print(previous4_candle['close'])
-    print(previous4_candle['ema10'])
-    print(previous5_candle['close'])
-    print(previous5_candle['ema10'])
-    print(previous6_candle['close'])
-    print(previous6_candle['ema10'])
+    print(f"Laatste sluitprijs: {last_candle['close']}, EMA: {last_candle['ema10']}")
+    print(f"Vorige sluitprijs: {previous_candle['close']}, EMA: {previous_candle['ema10']}")
+    print(f"Eerdere sluitprijs: {previous2_candle['close']}, EMA: {previous2_candle['ema10']}")
+
 
 if __name__ == "__main__":
     main()

@@ -6,8 +6,8 @@ from pybit.unified_trading import HTTP
 
 
 
-API_KEY = "8JipCzXe9HTR6IRQC8"
-API_SECRET = "xaH4j3bL3KPUkUdUjTTWRY6l3lS4XLUQ57oh"
+API_KEY = ""
+API_SECRET = ""
 
 exchange = ccxt.bybit({
     "apiKey": API_KEY,
@@ -21,7 +21,7 @@ session = HTTP(
 
 symbol = "ADA/USDT"
 type = "market"
-amount = 2
+amount = 40
 price = 1.0
 leverage = 10
 
@@ -92,7 +92,7 @@ def main():
 
 
 
-    create_order("sell")
+    create_order("buy")
 
 if __name__ == "__main__":
     main()

@@ -4,7 +4,11 @@ from datetime import datetime
 import pandas as pd
 import time
 from ta.trend import EMAIndicator, SMAIndicator
+from flask import Flask, render_template
+import threading
 
+app = Flask(__name__)
+log_messages = []  # Storage for log messages
 
 API_KEY = ""
 API_SECRET = ""
@@ -26,6 +30,18 @@ amount = 40
 price = 1.0
 leverage = 5
 
+@app.route("/")
+def home():
+    """Render the logs in the index.html file."""
+    logs_html = " \n ".join(log_messages[-100:])  # Combine the last 100 logs
+    return render_template("index.html", logs=logs_html)
+
+def add_log(message):
+    """Voeg een logbericht toe aan de lijst en druk af."""
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    log_message = f"{timestamp} - {message}"
+    log_messages.append(log_message)
+    print(log_message)
 
 def wait_until_next_candle(interval_minutes=15):
     """Wacht tot het begin van de volgende candle op een specifiek interval."""
@@ -34,18 +50,20 @@ def wait_until_next_candle(interval_minutes=15):
     seconds_to_next_candle = (
         interval_minutes * 60 - (now.minute % interval_minutes) * 60 - now.second
     )
-    print(f"Wachten tot de volgende candle: {seconds_to_next_candle} seconden...")
+    add_log(f"Wachten tot de volgende candle: {seconds_to_next_candle} seconden...")
     time.sleep(seconds_to_next_candle)
+
 def toggle_margin_trade():
     """Toggle margin trading mode on Bybit."""
     try:
         response = session.spot_margin_trade_toggle_margin_trade(
             spotMarginMode= "1",   # Enable margin trading
         )
-        print(f"Margin trading mode set successfully: {response}")
+        add_log(f"Margin trading mode set successfully: {response}")
         return response
     except Exception as e:
-        print(f"Error setting margin trading mode: {e}")
+        add_log(f"Error setting margin trading mode: {e}")
+
 def switch_cross_isolated_mode():
     """Switch between cross and isolated margin mode."""
     try:
@@ -56,10 +74,11 @@ def switch_cross_isolated_mode():
             buyLeverage= leverage,
             sellLeverage= leverage,
         )
-        print(f"Margin mode set successfully: {response}")
+        add_log(f"Margin mode set successfully: {response}")
         return response
     except Exception as e:
-        print(f"Error setting margin mode: {e}")
+        add_log(f"Error setting margin mode: {e}")
+
 def set_leverage():
     """
     Set leverage for Bybit trading using pybit.
@@ -72,10 +91,11 @@ def set_leverage():
         response = session.spot_margin_trade_set_leverage(
             leverage= leverage
         )
-        print(f"Leverage set successfully: {response}")
+        add_log(f"Leverage set successfully: {response}")
         return response
     except Exception as e:
-        print(f"Error setting leverage: {e}")
+        add_log(f"Error setting leverage: {e}")
+
 def fetch_data(symbol, timeframe, limit=52, retries=3, delay=5):    
     """Haalt markthistorie op met verbeterde foutafhandeling"""
     for attempt in range(retries):
@@ -83,7 +103,7 @@ def fetch_data(symbol, timeframe, limit=52, retries=3, delay=5):
             candles = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
 
             if not candles:  # Controleer of er geen gegevens zijn opgehaald
-                print("Geen gegevens ontvangen van de API.")
+                add_log("Geen gegevens ontvangen van de API.")
                 return None
             df = pd.DataFrame(candles, columns=["timestamp", "open", "high", "low", "close", "volume"])
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
@@ -92,27 +112,28 @@ def fetch_data(symbol, timeframe, limit=52, retries=3, delay=5):
             last_candle_time = df.iloc[-1]["timestamp"]
             current_time = datetime.now()
             if (current_time - last_candle_time).seconds < 30 * 60:
-                print("De laatste candle is nog niet volledig.")
+                add_log("De laatste candle is nog niet volledig.")
                 return None
             
             return df
         except ccxt.NetworkError as e:
-            print(f"Netwerkfout bij ophalen van data: {e}")
+            add_log(f"Netwerkfout bij ophalen van data: {e}")
         except ccxt.ExchangeError as e:
-            print(f"Fout bij het ophalen van data van de exchange: {e}")
+            add_log(f"Fout bij het ophalen van data van de exchange: {e}")
         except Exception as e:
-            print(f"Onverwachte fout: {e}")
+            add_log(f"Onverwachte fout: {e}")
         
         # Wacht en probeer opnieuw na een mislukte poging
-        print(f"Probeer het opnieuw na {delay} seconden...")
+        add_log(f"Probeer het opnieuw na {delay} seconden...")
         time.sleep(delay)
-    print("Maximale pogingen bereikt. Geen data ontvangen.")
+    add_log("Maximale pogingen bereikt. Geen data ontvangen.")
     return None
 
 def calculate_sma(data, period=9):
     sma = SMAIndicator(data["close"], window=period)
     data["sma"] = sma.sma_indicator()
     return data
+
 def calculate_ema(data, short_period=20, long_period=50):
     """Bereken EMA's op sluitprijzen"""
     ema_short = EMAIndicator(data["close"], window=short_period)
@@ -124,30 +145,31 @@ def calculate_ema(data, short_period=20, long_period=50):
 
 def create_order(side):
     """Plaats een marktorder"""
-    print(f"{side} order voor {amount} {symbol}")
+    add_log(f"{side} order voor {amount} {symbol}")
     try:
         params = {
             "reduceOnly": False,  
             "isLeverage": "1"
         }
         order = exchange.create_order(symbol, type, side, amount, price, params)
-        print(f"Order geplaatst {symbol, type, side, amount, price, params}")
+        add_log(f"Order geplaatst {symbol, type, side, amount, price, params}")
         return order
     except Exception as e:
-        print(f"Fout bij het plaatsen van een order: {e}")
+        add_log(f"Fout bij het plaatsen van een order: {e}")
         return None
+
 def close_position(side):
     """Sluit een bestaande positie."""
-    print(f"Sluiten van {side} positie ...")
+    add_log(f"Sluiten van {side} positie ...")
     try:
         params= {"reduceOnly": True,
                  "isLeverage": "1"}
 
         order = exchange.create_order(symbol, type, side, amount, price, params)
-        print(f"Positie gesloten:  {amount} {symbol}")
+        add_log(f"Positie gesloten:  {amount} {symbol}")
         return order
     except Exception as e:
-        print(f"Fout bij sluiten van positie: {e}")
+        add_log(f"Fout bij sluiten van positie: {e}")
 
 def spot_margin_trade_get_vip_margin_data():
     """Haal VIP-margegegevens op voor een specifieke coin (ADA)."""
@@ -157,13 +179,13 @@ def spot_margin_trade_get_vip_margin_data():
         
         # Controleer of de response succesvol is
         if not response or response.get("retCode") != 0:
-            print(f"Fout bij het ophalen van data: {response.get('retMsg', 'Onbekende fout')}")
+            add_log(f"Fout bij het ophalen van data: {response.get('retMsg', 'Onbekende fout')}")
             return None
         
         # Vind de lijst met coins
         vip_coin_list = response.get("result", {}).get("vipCoinList", [])
         if not vip_coin_list:
-            print("Geen vipCoinList gevonden in de response.")
+            add_log("Geen vipCoinList gevonden in de response.")
             return None
         
         # Doorzoek de 'list' voor de specifieke coin ADA
@@ -174,16 +196,14 @@ def spot_margin_trade_get_vip_margin_data():
                 None
             )
             if ada_data:
-                print(f"VIP-margegegevens voor ADA: {ada_data}")
+                add_log(f"VIP-margegegevens voor ADA: {ada_data}")
                 return ada_data
         
-        print("ADA niet gevonden in de opgehaalde data.")
+        add_log("ADA niet gevonden in de opgehaalde data.")
         return None
     except Exception as e:
-        print(f"Fout bij het ophalen van VIP-margegegevens: {e}")
+        add_log(f"Fout bij het ophalen van VIP-margegegevens: {e}")
         return None
-
-
 
 def main():
     # spot_margin_trade_get_vip_margin_data()
@@ -195,11 +215,11 @@ def main():
     while True:
         try:
             wait_until_next_candle(interval_minutes=15)
-            print(f"Candle tijd: {datetime.now()}")
+            add_log(f"Candle tijd: {datetime.now()}")
 
             data = fetch_data(symbol, timeframe)
             if data is None:
-                print("Geen gegevens ontvangen, opnieuw proberen.")
+                add_log("Geen gegevens ontvangen, opnieuw proberen.")
                 continue
 
             data = calculate_ema(data)
@@ -208,18 +228,18 @@ def main():
             previous_candle = data.iloc[-1]
             previous2_candle = data.iloc[-2]
 
-            print(f"Een-na-laatste candle: EMA20={previous2_candle['ema20']}, SMA={previous2_candle['sma']}")
-            print(f"Laatste candle: EMA20={previous_candle['ema20']}, SMA={previous_candle['sma']}")
+            add_log(f"Een-na-laatste candle: EMA20={previous2_candle['ema20']}, SMA={previous2_candle['sma']}")
+            add_log(f"Laatste candle: EMA20={previous_candle['ema20']}, SMA={previous_candle['sma']}")
 
             if previous_candle["ema20"] > previous_candle["sma"]:
-                print("Trend: EMA20 boven SMA")
+                add_log("Trend: EMA20 boven SMA")
             elif previous_candle["ema20"] < previous_candle["sma"]:
-                print("Trend: EMA20 onder SMA") 
+                add_log("Trend: EMA20 onder SMA") 
 
-            print ("-------------------")
+            add_log ("-------------------")
 
             if previous2_candle["ema20"] < previous2_candle["sma"] and previous_candle["ema20"] > previous_candle["sma"]:
-                print("SMA komt onder EMA: Verkoop signaal")
+                add_log("SMA komt onder EMA: Verkoop signaal")
                 # Plaats een kooporder indien nodig
                 if current_position == "buy":
                     close_position("sell")
@@ -227,7 +247,7 @@ def main():
                 current_position = "sell"
 
             elif previous2_candle["ema20"] > previous2_candle["sma"] and previous_candle["ema20"] < previous_candle["sma"]:
-                print("SMA komt boven EMA: Koop signaal")
+                add_log("SMA komt boven EMA: Koop signaal")
                 # Plaats een verkooporder indien nodig
                 if current_position == "sell":
                     close_position("buy")
@@ -235,13 +255,18 @@ def main():
                 current_position = "buy"
 
             else:
-                print("Geen signaal")
+                add_log("Geen signaal")
             
         except Exception as e:
-            print(f"Fout bij het ophalen van data: {e}")
-            print(f"Probeer het opnieuw na 5 seconden...")
+            add_log(f"Fout bij het ophalen van data: {e}")
+            add_log(f"Probeer het opnieuw na 5 seconden...")
             time.sleep(5)
             continue
 
-if __name__ == "__main__":
+def run_bot():
     main()
+
+if __name__ == "__main__":
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    app.run(host="0.0.0.0", port=5001)  # Start de Flask-server

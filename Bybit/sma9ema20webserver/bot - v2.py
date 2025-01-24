@@ -26,7 +26,7 @@ session = HTTP(
 symbol = "ADA/USDT"
 timeframe = "15m"
 type = "market"
-amount = 40
+amount = 100
 price = 1.0
 leverage = 5
 
@@ -129,18 +129,15 @@ def fetch_data(symbol, timeframe, limit=52, retries=3, delay=5):
     add_log("Maximale pogingen bereikt. Geen data ontvangen.")
     return None
 
-def calculate_sma(data, period=9):
+def calculate_sma(data, period=20):
     sma = SMAIndicator(data["close"], window=period)
     data["sma"] = sma.sma_indicator()
     return data
 
-def calculate_ema(data, short_period=20, long_period=50):
+def calculate_ema(data, period=10):
     """Bereken EMA's op sluitprijzen"""
-    ema_short = EMAIndicator(data["close"], window=short_period)
-    ema_long = EMAIndicator(data["close"], window=long_period)
-
-    data["ema20"] = ema_short.ema_indicator()
-    data["ema50"] = ema_long.ema_indicator()
+    ema = EMAIndicator(data["close"], window=period)
+    data["ema"] = ema.ema_indicator()
     return data
 
 def create_order(side):
@@ -227,15 +224,15 @@ def main():
             previous_candle = data.iloc[-1]
             previous2_candle = data.iloc[-2]
 
-            add_log(f"Een-na-laatste candle: EMA20={previous2_candle['ema20']}, SMA={previous2_candle['sma']}")
-            add_log(f"Laatste candle: EMA20={previous_candle['ema20']}, SMA={previous_candle['sma']}")
+            add_log(f"Een-na-laatste candle: EMA10={previous2_candle['ema']}, SMA20={previous2_candle['sma']}")
+            add_log(f"Laatste candle: EMA10={previous_candle['ema']}, SMA20={previous_candle['sma']}")
 
-            if previous_candle["ema20"] > previous_candle["sma"]:
-                add_log("Trend: EMA20 boven SMA")
+            if previous_candle["ema"] > previous_candle["sma"]:
+                add_log("Trend: EMA10 boven SMA20")
                 indicator = "boven"
 
-            elif previous_candle["ema20"] < previous_candle["sma"]:
-                add_log("Trend: EMA20 onder SMA")
+            elif previous_candle["ema"] < previous_candle["sma"]:
+                add_log("Trend: EMA10 onder SMA20")
                 indicator = "onder"         
 
             # Print de huidige en een-na-laatste indicatoren
@@ -252,20 +249,19 @@ def main():
             if len(indicators) == 2:
                 # Buy condition: second-last is 'onder' and last is 'boven'
                 if indicators[0] == "onder" and indicators[1] == "boven":
-                    add_log("'Verkoop' signaal: vorige indicator was 'onder', huidige is 'boven'.")
-                    if current_position == "buy":
-                        close_position("sell")
-                    create_order("sell")
-                    current_position = "sell"
-                
-                # Sell condition: second-last is 'boven' and last is 'onder'
-                elif indicators[0] == "boven" and indicators[1] == "onder":
                     add_log("Koop signaal: vorige indicator was 'boven', huidige is 'onder'.")
                     if current_position == "sell":
                         close_position("buy")
                     create_order("buy")
                     current_position = "buy"
-            
+                
+                # Sell condition: second-last is 'boven' and last is 'onder'
+                elif indicators[0] == "boven" and indicators[1] == "onder":
+                    add_log("'Verkoop' signaal: vorige indicator was 'onder', huidige is 'boven'.")
+                    if current_position == "buy":
+                        close_position("sell")
+                    create_order("sell")
+                    current_position = "sell"            
         except Exception as e:
             add_log(f"Fout bij het ophalen van data: {e}")
             add_log(f"Probeer het opnieuw na 5 seconden...")

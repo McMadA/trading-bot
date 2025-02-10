@@ -1,6 +1,6 @@
 import ccxt
 import pandas as pd
-from ta.trend import EMAIndicator
+from ta.trend import EMAIndicator, SMAIndicator
 import time
 from datetime import datetime
 
@@ -53,12 +53,24 @@ def fetch_data(symbol, timeframe, limit=52, retries=3, delay=5):
     print("Maximale pogingen bereikt. Geen data ontvangen.")
     return None
 
+def calculate_sma(data, period=20):
+    sma = SMAIndicator(data["close"], window=period)
+    data["sma"] = sma.sma_indicator()
+    return data
+
+def calculate_ema(data, period=10):
+    """Bereken EMA's op sluitprijzen"""
+    ema = EMAIndicator(data["close"], window=period)
+    data["ema"] = ema.ema_indicator()
+    return data
 
 def main():
     # Data ophalen
     data = fetch_data(SYMBOL, TIMEFRAME)
     if data is None:
         print("Geen gegevens ontvangen, opnieuw proberen.")
+    data = calculate_ema(data)
+    data = calculate_sma(data)
     print(data)
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ exchange = ccxt.bybit({
 
 # Functies voor data ophalen en indicatoren
 
-def fetch_data(symbol, timeframe, limit=50, retries=3, delay=5):
+def fetch_data(symbol, timeframe, limit=200, retries=3, delay=5):
     for attempt in range(retries):
         try:
             candles = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
@@ -94,7 +94,7 @@ def main():
     data = check_crossovers(data)
     data = simulate_trading(data)
 
-    data.to_csv("trading_results.csv", index=False)
+    data.to_csv("trading_results2.csv", index=False)
     print("Results saved to trading_results.csv")
 
 

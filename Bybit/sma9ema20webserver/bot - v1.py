@@ -10,8 +10,8 @@ import threading
 app = Flask(__name__)
 log_messages = []  # Storage for log messages
 
-API_KEY = "8JipCzXe9HTR6IRQC8"
-API_SECRET = "xaH4j3bL3KPUkUdUjTTWRY6l3lS4XLUQ57oh"
+API_KEY = ""
+API_SECRET = ""
 
 exchange = ccxt.bybit({
     "apiKey": API_KEY,
@@ -129,15 +129,18 @@ def fetch_data(symbol, timeframe, limit=52, retries=3, delay=5):
     add_log("Maximale pogingen bereikt. Geen data ontvangen.")
     return None
 
-def calculate_sma(data, period=20):
+def calculate_sma(data, period=9):
     sma = SMAIndicator(data["close"], window=period)
     data["sma"] = sma.sma_indicator()
     return data
 
-def calculate_ema(data, period=10):
+def calculate_ema(data, short_period=20, long_period=50):
     """Bereken EMA's op sluitprijzen"""
-    ema = EMAIndicator(data["close"], window=period)
-    data["ema"] = ema.ema_indicator()
+    ema_short = EMAIndicator(data["close"], window=short_period)
+    ema_long = EMAIndicator(data["close"], window=long_period)
+
+    data["ema20"] = ema_short.ema_indicator()
+    data["ema50"] = ema_long.ema_indicator()
     return data
 
 def create_order(side):
@@ -204,14 +207,15 @@ def spot_margin_trade_get_vip_margin_data():
 
 def main():
     # spot_margin_trade_get_vip_margin_data()
-    # toggle_margin_trade()
-    # switch_cross_isolated_mode()
-    # set_leverage()
+    toggle_margin_trade()
+    switch_cross_isolated_mode()
+    set_leverage()
     current_position = None
-    indicators = []
+
     while True:
         try:
             wait_until_next_candle(interval_minutes=15)
+            add_log(f"Candle tijd: {datetime.now()}")
 
             data = fetch_data(symbol, timeframe)
             if data is None:
@@ -224,44 +228,35 @@ def main():
             previous_candle = data.iloc[-1]
             previous2_candle = data.iloc[-2]
 
-            add_log(f"Een-na-laatste candle: EMA10={previous2_candle['ema']}, SMA20={previous2_candle['sma']}")
-            add_log(f"Laatste candle: EMA10={previous_candle['ema']}, SMA20={previous_candle['sma']}")
+            add_log(f"Een-na-laatste candle: EMA20={previous2_candle['ema20']}, SMA={previous2_candle['sma']}")
+            add_log(f"Laatste candle: EMA20={previous_candle['ema20']}, SMA={previous_candle['sma']}")
 
-            if previous_candle["ema"] > previous_candle["sma"]:
-                add_log("Trend: EMA10 boven SMA20")
-                indicator = "boven"
+            if previous_candle["ema20"] > previous_candle["sma"]:
+                add_log("Trend: EMA20 boven SMA")
+            elif previous_candle["ema20"] < previous_candle["sma"]:
+                add_log("Trend: EMA20 onder SMA") 
 
-            elif previous_candle["ema"] < previous_candle["sma"]:
-                add_log("Trend: EMA10 onder SMA20")
-                indicator = "onder"         
+            add_log ("-------------------")
 
-            # Print de huidige en een-na-laatste indicatoren
-            add_log(f"Huidige indicator: {indicator}")  # Huidige indicator
-            if len(indicators) >= 1:
-                add_log(f"Een-na-laatste indicator: {indicators[0]}")  # Een-na-laatste indicator
+            if previous2_candle["ema20"] < previous2_candle["sma"] and previous_candle["ema20"] > previous_candle["sma"]:
+                add_log("SMA komt onder EMA: Verkoop signaal")
+                # Plaats een kooporder indien nodig
+                if current_position == "buy":
+                    close_position("sell")
+                create_order("sell")
+                current_position = "sell"
 
-            # Store the indicator in the list, keeping only the last two indicators
-            if len(indicators) >= 2:
-                indicators.pop(0)  # Remove the oldest indicator
-            indicators.append(indicator)
+            elif previous2_candle["ema20"] > previous2_candle["sma"] and previous_candle["ema20"] < previous_candle["sma"]:
+                add_log("SMA komt boven EMA: Koop signaal")
+                # Plaats een verkooporder indien nodig
+                if current_position == "sell":
+                    close_position("buy")
+                create_order("buy")
+                current_position = "buy"
 
-            # If we have at least two indicators, check the buy/sell condition
-            if len(indicators) == 2:
-                # Buy condition: second-last is 'onder' and last is 'boven'
-                if indicators[0] == "onder" and indicators[1] == "boven":
-                    add_log("Koop signaal: vorige indicator was 'boven', huidige is 'onder'.")
-                    if current_position == "sell":
-                        close_position("buy")
-                    create_order("buy")
-                    current_position = "buy"
-                
-                # Sell condition: second-last is 'boven' and last is 'onder'
-                elif indicators[0] == "boven" and indicators[1] == "onder":
-                    add_log("'Verkoop' signaal: vorige indicator was 'onder', huidige is 'boven'.")
-                    if current_position == "buy":
-                        close_position("sell")
-                    create_order("sell")
-                    current_position = "sell"            
+            else:
+                add_log("Geen signaal")
+            
         except Exception as e:
             add_log(f"Fout bij het ophalen van data: {e}")
             add_log(f"Probeer het opnieuw na 5 seconden...")

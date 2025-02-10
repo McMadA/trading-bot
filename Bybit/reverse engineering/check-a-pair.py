@@ -20,7 +20,7 @@ exchange = ccxt.bybit({
 
 # Functies voor data ophalen en indicatoren
 
-def fetch_data(symbol, timeframe, limit=150, retries=3, delay=5):
+def fetch_data(symbol, timeframe, limit=50, retries=3, delay=5):
     for attempt in range(retries):
         try:
             candles = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)

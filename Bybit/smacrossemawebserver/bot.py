@@ -129,12 +129,12 @@ def fetch_data(symbol, timeframe, limit=52, retries=3, delay=5):
     add_log("Maximale pogingen bereikt. Geen data ontvangen.")
     return None
 
-def calculate_sma(data, period=20):
+def calculate_sma(data, period=8):
     sma = SMAIndicator(data["close"], window=period)
     data["sma"] = sma.sma_indicator()
     return data
 
-def calculate_ema(data, period=10):
+def calculate_ema(data, period=19):
     """Bereken EMA's op sluitprijzen"""
     ema = EMAIndicator(data["close"], window=period)
     data["ema"] = ema.ema_indicator()
@@ -224,15 +224,15 @@ def main():
             previous_candle = data.iloc[-1]
             previous2_candle = data.iloc[-2]
 
-            add_log(f"Een-na-laatste candle: EMA10={previous2_candle['ema']}, SMA20={previous2_candle['sma']}")
-            add_log(f"Laatste candle: EMA10={previous_candle['ema']}, SMA20={previous_candle['sma']}")
+            add_log(f"Een-na-laatste candle: EMA19={previous2_candle['ema']}, SMA8={previous2_candle['sma']}")
+            add_log(f"Laatste candle: EMA19={previous_candle['ema']}, SMA8={previous_candle['sma']}")
 
             if previous_candle["ema"] > previous_candle["sma"]:
-                add_log("Trend: EMA10 boven SMA20")
+                add_log("Trend: EMA19 boven SMA8")
                 indicator = "boven"
 
             elif previous_candle["ema"] < previous_candle["sma"]:
-                add_log("Trend: EMA10 onder SMA20")
+                add_log("Trend: EMA19 onder SMA8")
                 indicator = "onder"         
 
             # Print de huidige en een-na-laatste indicatoren

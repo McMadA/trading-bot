@@ -20,7 +20,7 @@ exchange = ccxt.bybit({
 })
 
 
-def fetch_data(symbol, timeframe, limit=1000, retries=3, delay=5):    
+def fetch_data(symbol, timeframe, limit=50, retries=3, delay=5):    
     """Haalt markthistorie op met verbeterde foutafhandeling"""
     for attempt in range(retries):
         try:
@@ -64,6 +64,13 @@ def calculate_ema(data, period=10):
     data["ema"] = ema.ema_indicator()
     return data
 
+def check_crossovers(data):
+    """ Geeft een signaal wanneer EMA de SMA kruist. """
+    data["ema_boven_sma"] = (data["ema"] > data["sma"]).astype(bool)  # Zorg dat het een boolean is
+    data["bullish_cross"] = data["ema_boven_sma"] & ~data["ema_boven_sma"].shift(1).fillna(False)
+    data["bearish_cross"] = ~data["ema_boven_sma"] & data["ema_boven_sma"].shift(1).fillna(False)
+    return data
+
 def main():
     # Data ophalen
     data = fetch_data(SYMBOL, TIMEFRAME)
@@ -71,6 +78,7 @@ def main():
         print("Geen gegevens ontvangen, opnieuw proberen.")
     data = calculate_ema(data)
     data = calculate_sma(data)
+    data = check_crossovers(data)
     print(data)
 
 if __name__ == "__main__":

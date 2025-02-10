@@ -7,8 +7,8 @@ from datetime import datetime
 # Configuratie
 API_KEY = "8JipCzXe9HTR6IRQC8"
 API_SECRET = "xaH4j3bL3KPUkUdUjTTWRY6l3lS4XLUQ57oh"
-SYMBOL = "ADA/USDT"  # Pas aan naar jouw gewenste handelspaar
-TIMEFRAME = "15m"  # Tijdframe van candles
+SYMBOL = "ADA/USDT"  # Handelspaar
+TIMEFRAME = "1h"  # Tijdframe van candles
 TRADE_ASSET = "USDT"  # Gebruik de beschikbare USDT voor de order
 
 # Verbind met MEXC
@@ -19,105 +19,85 @@ exchange = ccxt.bybit({
 })
 
 # Functies voor data ophalen en indicatoren
-def fetch_data(symbol, timeframe, limit=1000, retries=3, delay=5):    
-    """Haalt markthistorie op met verbeterde foutafhandeling"""
+
+def fetch_data(symbol, timeframe, limit=150, retries=3, delay=5):
     for attempt in range(retries):
         try:
             candles = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
-
-            if not candles:  # Controleer of er geen gegevens zijn opgehaald
+            if not candles:
                 print("Geen gegevens ontvangen van de API.")
                 return None
             df = pd.DataFrame(candles, columns=["timestamp", "open", "high", "low", "close", "volume"])
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-
-            # Controleer of de laatste candle volledig is
-            last_candle_time = df.iloc[-1]["timestamp"]
-            current_time = datetime.now()
-            if (current_time - last_candle_time).seconds < 30 * 60:
-                print("De laatste candle is nog niet volledig.")
-                return None
-            
             return df
-        except ccxt.NetworkError as e:
-            print(f"Netwerkfout bij ophalen van data: {e}")
-        except ccxt.ExchangeError as e:
-            print(f"Fout bij het ophalen van data van de exchange: {e}")
         except Exception as e:
-            print(f"Onverwachte fout: {e}")
-        
-        # Wacht en probeer opnieuw na een mislukte poging
-        print(f"Probeer het opnieuw na {delay} seconden...")
-        time.sleep(delay)
-    print("Maximale pogingen bereikt. Geen data ontvangen.")
+            print(f"Fout bij ophalen van data: {e}")
+            time.sleep(delay)
     return None
 
-def calculate_sma(data, period=20):
+def calculate_sma(data, period=8):
     sma = SMAIndicator(data["close"], window=period)
     data["sma"] = sma.sma_indicator()
     return data
 
-def calculate_ema(data, period=10):
-    """Bereken EMA's op sluitprijzen"""
+def calculate_ema(data, period=19):
     ema = EMAIndicator(data["close"], window=period)
     data["ema"] = ema.ema_indicator()
     return data
 
-def buy_order(amount):
-    """Simuleer een kooporder"""
-    print(f"Kooporder geplaatst voor {amount} {SYMBOL}")
-    return amount  # Retourneer het aantal gekochte eenheden
+def check_crossovers(data):
+    """ Geeft een signaal wanneer EMA de SMA kruist. """
+    data["ema_boven_sma"] = (data["ema"] > data["sma"]).astype(bool)  # Zorg dat het een boolean is
+    data["bullish_cross"] = data["ema_boven_sma"] & ~data["ema_boven_sma"].shift(1).fillna(False)
+    data["bearish_cross"] = ~data["ema_boven_sma"] & data["ema_boven_sma"].shift(1).fillna(False)
+    return data
 
-def sell_order(amount):
-    """Simuleer een verkooporder"""
-    print(f"Verkooporder geplaatst voor {amount} {SYMBOL}")
-    return amount  # Retourneer het aantal verkochte eenheden
+def simulate_trading(data, start_usdt=100, start_ada=100):
+    """ Simuleert trading en houdt saldo's bij. """
+    usdt_balance = start_usdt
+    ada_balance = start_ada
 
-def simulate_trading(data, start_balance=100, buy_amount=100):
-    """Simuleer trading op basis van EMA en SMA"""
-    balance = start_balance
-    position = 0  # Aantal ADA gekocht
-    last_buy_price = 0
-    last_sell_price = 0
+    usdt_balances = []
+    ada_balances = []
 
-    for i in range(20, len(data)):  # Start vanaf de 20e candle (waar de SMA20 beschikbaar is)
-        current_ema = data.iloc[i]["ema"]
-        current_sma = data.iloc[i]["sma"]
-        close_price = data.iloc[i]["close"]
-        
-        # Koop wanneer EMA boven SMA komt
-        if current_ema > current_sma and position == 0:
-            position = buy_order(buy_amount / close_price)  # Aantal gekocht
-            last_buy_price = close_price
-            print(f"Gekocht: {position} eenheden van {SYMBOL} tegen {close_price} USD")
-        
-        # Verkoop wanneer EMA onder SMA komt
-        elif current_ema < current_sma and position > 0:
-            balance += position * close_price  # Verkoop alle posities
-            last_sell_price = close_price
-            print(f"Verkocht: {position} eenheden van {SYMBOL} tegen {close_price} USD")
-            position = 0  # Geen open positie meer
+    for index, row in data.iterrows():
+        close_price = row["close"]
 
-    # Eindresultaat
-    if position > 0:  # Als er nog een open positie is aan het eind
-        balance += position * data.iloc[-1]["close"]
-        print(f"Verkocht aan het einde: {position} eenheden van {SYMBOL} tegen {data.iloc[-1]['close']} USD")
+        if row["bullish_cross"]:
+            if usdt_balance >= 100:
+                ada_bought = 100 / close_price
+                ada_balance += ada_bought
+                usdt_balance -= 100
+                print(f"{row['timestamp']} - KOOP: ${100} aan ADA tegen ${close_price} per ADA")
 
-    print(f"Eindbalans: {balance} USDT")
-    return balance
+        if row["bearish_cross"]:
+            if ada_balance * close_price >= 100:
+                ada_sold = 100 / close_price
+                ada_balance -= ada_sold
+                usdt_balance += 100
+                print(f"{row['timestamp']} - VERKOOP: ${100} aan ADA tegen ${close_price} per ADA")
+
+        usdt_balances.append(usdt_balance)
+        ada_balances.append(ada_balance)
+
+    data["usdt_balance"] = usdt_balances
+    data["ada_balance"] = ada_balances
+    return data
 
 def main():
-    # Data ophalen
     data = fetch_data(SYMBOL, TIMEFRAME)
     if data is None:
         print("Geen gegevens ontvangen, opnieuw proberen.")
         return
     data = calculate_ema(data)
     data = calculate_sma(data)
+    data = check_crossovers(data)
+    data = simulate_trading(data)
 
-    # Simuleer het handelen
-    final_balance = simulate_trading(data)
-    print(f"Resultaat van de simulatie: {final_balance} USDT")
+    data.to_csv("trading_results.csv", index=False)
+    print("Results saved to trading_results.csv")
 
+
+    print(data[["timestamp", "close", "ema", "sma", "bullish_cross", "bearish_cross", "usdt_balance", "ada_balance"]])
 if __name__ == "__main__":
     main()

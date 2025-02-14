@@ -3,6 +3,7 @@ import pandas as pd
 from ta.trend import EMAIndicator, SMAIndicator
 import time
 from datetime import datetime
+import multiprocessing
 
 # Configuratie
 API_KEY = "8JipCzXe9HTR6IRQC8"
@@ -60,6 +61,8 @@ def simulate_trading(data, start_usdt=100, start_ada=100):
     usdt_balances = []
     ada_balances = []
 
+    initial_usdt_value = start_usdt + (start_ada * data["close"].iloc[0])
+
     for index, row in data.iterrows():
         close_price = row["close"]
 
@@ -80,17 +83,24 @@ def simulate_trading(data, start_usdt=100, start_ada=100):
 
     data["usdt_balance"] = usdt_balances
     data["ada_balance"] = ada_balances
-    return data
 
-def run_simulations(data, ema_periods=range(5, 50), sma_periods=range(5, 50), timeframes=["5m", "15m", "30m", "1h", "4h"]):
+    final_usdt_balance = usdt_balance + (ada_balance * data["close"].iloc[-1])
+    percentage_profit = ((final_usdt_balance - initial_usdt_value) / initial_usdt_value) * 100
+
+    return data, percentage_profit
+
+
+def run_simulations(data, ema_periods=range(1, 100), sma_periods=range(1, 100), timeframes=["5m", "15m", "30m", "1h", "4h"]):
     """Run simulations with different EMA, SMA periods and timeframes and show the most profitable result."""
     best_profit = -float('inf')
     best_combination = None
     best_timeframe = None
+    best_percentage_profit = None
 
     for timeframe in timeframes:
         print(f"Running simulations for {timeframe}...")
         for ema_period in ema_periods:
+            print(f"Running simulations for EMA{ema_period}...")
             for sma_period in sma_periods:
                 # Fetch data for the current timeframe
                 data = fetch_data(SYMBOL, timeframe)
@@ -105,7 +115,7 @@ def run_simulations(data, ema_periods=range(5, 50), sma_periods=range(5, 50), ti
                 data = check_crossovers(data)
                 
                 # Simulate trading for this combination
-                data_with_balances = simulate_trading(data, start_usdt=100, start_ada=100)
+                data_with_balances, percentage_profit = simulate_trading(data, start_usdt=100, start_ada=100)
 
                 # Calculate the final balance (USDT + ADA value at last close price)
                 final_usdt_balance = data_with_balances["usdt_balance"].iloc[-1]
@@ -114,15 +124,15 @@ def run_simulations(data, ema_periods=range(5, 50), sma_periods=range(5, 50), ti
 
                 # Calculate profit
                 profit = final_balance - 100  # Starting with 100 USDT
-                print(f"EMA{ema_period} + SMA{sma_period} -> Profit: ${profit:.2f}")
 
                 # Check for the most profitable combination
-                if profit > best_profit:
-                    best_profit = profit
+                if percentage_profit > best_profit:
+                    best_profit = percentage_profit
                     best_combination = (ema_period, sma_period)
                     best_timeframe = timeframe
+                    best_percentage_profit = percentage_profit
 
-    return best_combination, best_profit, best_timeframe
+    return best_combination, best_percentage_profit, best_timeframe
 
 # Simulatie van trading
 def main():

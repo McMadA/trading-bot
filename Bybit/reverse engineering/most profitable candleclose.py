@@ -1,30 +1,40 @@
 import ccxt
 import pandas as pd
-from ta.trend import EMAIndicator, SMAIndicator
+from ta.trend import SMAIndicator
 import time
 from datetime import datetime
-import multiprocessing
 
 # Configuratie
 API_KEY = "8JipCzXe9HTR6IRQC8"
 API_SECRET = "xaH4j3bL3KPUkUdUjTTWRY6l3lS4XLUQ57oh"
 SYMBOL = "ADA/USDT"  # Handelspaar
 TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h"]  # Different timeframes for simulation
-TRADE_ASSET = "USDT"  # Gebruik de beschikbare USDT voor de order
+STANDARD_CANDLES = 1000  # Number of candles for 4h timeframe (standard)
 
 # Verbind met MEXC
 exchange = ccxt.bybit({
     "apiKey": API_KEY,
     "secret": API_SECRET,
-    "options": {"defaultType": "spot"},  
+    "options": {"defaultType": "spot"},
 })
 
-# Functies voor data ophalen en indicatoren
+# Define the duration of each timeframe in hours
+timeframe_durations = {
+    "5m": 5 / 60,
+    "15m": 15 / 60,
+    "30m": 30 / 60,
+    "1h": 1,
+    "4h": 4
+}
 
-def fetch_data(symbol, timeframe, limit=1000, retries=3, delay=5):
+# Functies voor data ophalen en indicatoren
+def fetch_data(symbol, timeframe, limit=5000, retries=3, delay=5):
+    candles_needed = STANDARD_CANDLES * (timeframe_durations["4h"] / timeframe_durations[timeframe])
+    candles_needed = int(candles_needed)  # Ensure we get an integer number of candles
+
     for attempt in range(retries):
         try:
-            candles = exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
+            candles = exchange.fetch_ohlcv(symbol, timeframe, limit=candles_needed)
             if not candles:
                 print(f"Geen gegevens ontvangen van de API voor {timeframe}.")
                 return None
@@ -41,16 +51,12 @@ def calculate_sma(data, period=20):
     data["sma"] = sma.sma_indicator()
     return data
 
-# def calculate_ema(data, period=10):
-#     ema = EMAIndicator(data["close"], window=period)
-#     data["ema"] = ema.ema_indicator()
-#     return data
-
 def check_crossovers(data):
     """ Geeft een signaal wanneer candle close de sma kruist. """
     data["close_boven_sma"] = (data["close"] > data["sma"]).astype(bool)  # Zorg dat het een boolean is
     data["bullish_cross"] = (data["close_boven_sma"] & (~data["close_boven_sma"].shift(1).astype(bool).fillna(False))).astype(bool)
     data["bearish_cross"] = (~data["close_boven_sma"] & (data["close_boven_sma"].shift(1).astype(bool).fillna(False))).astype(bool)
+    return data
 
 def simulate_trading(data, start_usdt=100, start_ada=100):
     """ Simuleert trading en houdt saldo's bij. """
@@ -64,18 +70,23 @@ def simulate_trading(data, start_usdt=100, start_ada=100):
 
     for index, row in data.iterrows():
         close_price = row["close"]
+        timestamp = row["timestamp"]
 
         if row["bullish_cross"]:
-            if usdt_balance >= 100:
-                ada_bought = 100 / close_price
+            # Buy ADA based on available USDT balance
+            if usdt_balance > 0:
+                ada_bought = usdt_balance / close_price  # Buy with all available USDT
                 ada_balance += ada_bought
-                usdt_balance -= 100
+                usdt_balance = 0  # After buying, all USDT is spent
+                print(f"{timestamp}: Koop ADA voor {close_price} USDT -- Saldo ADA: {ada_balance:.2f}, Saldo USDT: {usdt_balance:.2f}")
 
         if row["bearish_cross"]:
-            if ada_balance * close_price >= 100:
-                ada_sold = 100 / close_price
-                ada_balance -= ada_sold
-                usdt_balance += 100
+            # Sell ADA based on available ADA balance
+            if ada_balance > 0:
+                usdt_received = ada_balance * close_price  # Sell all available ADA
+                usdt_balance += usdt_received
+                ada_balance = 0  # After selling, all ADA is sold
+                print(f"{timestamp}: Verkoop ADA voor {close_price} USDT -- Saldo USDT: {usdt_balance:.2f}, saldo ADA: {ada_balance:.2f}")
 
         usdt_balances.append(usdt_balance)
         ada_balances.append(ada_balance)
@@ -85,12 +96,12 @@ def simulate_trading(data, start_usdt=100, start_ada=100):
 
     final_usdt_balance = usdt_balance + (ada_balance * data["close"].iloc[-1])
     percentage_profit = ((final_usdt_balance - initial_usdt_value) / initial_usdt_value) * 100
+    print(f"Percentage winst: {percentage_profit:.2f}%")
+    print(f"Saldo USDT: {usdt_balance:.2f}, Saldo ADA: {ada_balance:.2f}")
 
     return data, percentage_profit
 
-
-
-def run_simulations(data, sma_periods=range(1, 100), timeframes=["5m", "15m", "30m", "1h", "4h"]):
+def run_simulations(data, sma_periods=range(19, 20), timeframes=["5m", "15m", "30m", "1h", "4h"]):
     """Run simulations with different SMA periods and timeframes and show the most profitable result."""
     best_profit = -float('inf')
     best_sma = None
@@ -107,26 +118,21 @@ def run_simulations(data, sma_periods=range(1, 100), timeframes=["5m", "15m", "3
             continue
 
         for sma_period in sma_periods:
-            # Calculate the EMA and SMA indicators with the chosen periods
+            print(f"Running simulations for SMA{sma_period}...")
+            # Calculate the SMA with the chosen period
             data_copy = data.copy()
-            data = calculate_sma(data_copy, period=sma_period)
-            data = check_crossovers(data_copy)
+            data_copy = calculate_sma(data_copy, period=sma_period)
+            
+            # Check for crossovers after calculating the SMA
+            data_copy = check_crossovers(data_copy)
             
             # Simulate trading for this combination
             data_with_balances, percentage_profit = simulate_trading(data_copy, start_usdt=100, start_ada=100)
 
-            # Calculate the final balance (USDT + ADA value at last close price)
-            final_usdt_balance = data_with_balances["usdt_balance"].iloc[-1]
-            final_ada_balance = data_with_balances["ada_balance"].iloc[-1]
-            final_balance = final_usdt_balance + final_ada_balance * data_with_balances["close"].iloc[-1]
-
-            # Calculate profit
-            profit = final_balance - 100  # Starting with 100 USDT
-
             # Check for the most profitable combination
             if percentage_profit > best_profit:
                 best_profit = percentage_profit
-                best_sma = (sma_period)
+                best_sma = sma_period
                 best_timeframe = timeframe
                 best_percentage_profit = percentage_profit
 
@@ -134,11 +140,14 @@ def run_simulations(data, sma_periods=range(1, 100), timeframes=["5m", "15m", "3
 
 # Simulatie van trading
 def main():
-    # Run simulations with different combinations of EMA, SMA periods and timeframes
-    best_combination, best_profit, best_timeframe = run_simulations(data=None)
+    # Run simulations with different combinations of SMA periods and timeframes
+    best_sma, best_profit, best_timeframe = run_simulations(data=None)
 
-    print(f"\nMost profitable combination: EMA{best_combination[0]} + SMA{best_combination[1]} at {best_timeframe}")
-    print(f"Best profit: ${best_profit:.2f}")
+    print(f"\nMost profitable combination: SMA{best_sma} at {best_timeframe}")
+    print(f"Best profit: {best_profit:.2f}%")
+
+
+
 
 if __name__ == "__main__":
     main()

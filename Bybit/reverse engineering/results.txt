@@ -1,2 +1,5 @@
-14 februari 2025    ada/usd     500candles      $18.55
-                    btc/usd     500candles      $1.15
+14 februari 2025    ada/usd     500candles      EMA54+SMA6 at 15m       $18.55
+                    btc/usd     500candles      EMA82+SMA39 at 15m      $1.15
+15 februari 2025    ada/usd     500candles      EMA5+SMA1 at 15m        $18.66
+                    ada/usd     1000candles     EMA17+SMA17 at 5h       $187.94
+

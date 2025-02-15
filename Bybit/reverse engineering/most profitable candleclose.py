@@ -41,17 +41,16 @@ def calculate_sma(data, period=20):
     data["sma"] = sma.sma_indicator()
     return data
 
-def calculate_ema(data, period=10):
-    ema = EMAIndicator(data["close"], window=period)
-    data["ema"] = ema.ema_indicator()
-    return data
+# def calculate_ema(data, period=10):
+#     ema = EMAIndicator(data["close"], window=period)
+#     data["ema"] = ema.ema_indicator()
+#     return data
 
 def check_crossovers(data):
-    """ Geeft een signaal wanneer EMA de SMA kruist. """
-    data["ema_boven_sma"] = (data["ema"] > data["sma"]).astype(bool)  # Zorg dat het een boolean is
-    data["bullish_cross"] = (data["ema_boven_sma"] & (~data["ema_boven_sma"].shift(1).astype(bool).fillna(False))).astype(bool)
-    data["bearish_cross"] = (~data["ema_boven_sma"] & (data["ema_boven_sma"].shift(1).astype(bool).fillna(False))).astype(bool)
-    return data
+    """ Geeft een signaal wanneer candle close de sma kruist. """
+    data["close_boven_sma"] = (data["close"] > data["sma"]).astype(bool)  # Zorg dat het een boolean is
+    data["bullish_cross"] = (data["close_boven_sma"] & (~data["close_boven_sma"].shift(1).astype(bool).fillna(False))).astype(bool)
+    data["bearish_cross"] = (~data["close_boven_sma"] & (data["close_boven_sma"].shift(1).astype(bool).fillna(False))).astype(bool)
 
 def simulate_trading(data, start_usdt=100, start_ada=100):
     """ Simuleert trading en houdt saldo's bij. """
@@ -91,10 +90,10 @@ def simulate_trading(data, start_usdt=100, start_ada=100):
 
 
 
-def run_simulations(data, ema_periods=range(1, 100), sma_periods=range(1, 100), timeframes=["5m", "15m", "30m", "1h", "4h"]):
-    """Run simulations with different EMA, SMA periods and timeframes and show the most profitable result."""
+def run_simulations(data, sma_periods=range(1, 100), timeframes=["5m", "15m", "30m", "1h", "4h"]):
+    """Run simulations with different SMA periods and timeframes and show the most profitable result."""
     best_profit = -float('inf')
-    best_combination = None
+    best_sma = None
     best_timeframe = None
     best_percentage_profit = None
 
@@ -107,35 +106,31 @@ def run_simulations(data, ema_periods=range(1, 100), sma_periods=range(1, 100), 
             print(f"Skipping {timeframe} due to missing data.")
             continue
 
-        for ema_period in ema_periods:
-            print(f"Running simulations for EMA{ema_period}...")
-            for sma_period in sma_periods:
-                
-                # Calculate the EMA and SMA indicators with the chosen periods
-                data_copy = data.copy()
-                data = calculate_ema(data_copy, period=ema_period)
-                data = calculate_sma(data_copy, period=sma_period)
-                data = check_crossovers(data_copy)
-                
-                # Simulate trading for this combination
-                data_with_balances, percentage_profit = simulate_trading(data_copy, start_usdt=100, start_ada=100)
+        for sma_period in sma_periods:
+            # Calculate the EMA and SMA indicators with the chosen periods
+            data_copy = data.copy()
+            data = calculate_sma(data_copy, period=sma_period)
+            data = check_crossovers(data_copy)
+            
+            # Simulate trading for this combination
+            data_with_balances, percentage_profit = simulate_trading(data_copy, start_usdt=100, start_ada=100)
 
-                # Calculate the final balance (USDT + ADA value at last close price)
-                final_usdt_balance = data_with_balances["usdt_balance"].iloc[-1]
-                final_ada_balance = data_with_balances["ada_balance"].iloc[-1]
-                final_balance = final_usdt_balance + final_ada_balance * data_with_balances["close"].iloc[-1]
+            # Calculate the final balance (USDT + ADA value at last close price)
+            final_usdt_balance = data_with_balances["usdt_balance"].iloc[-1]
+            final_ada_balance = data_with_balances["ada_balance"].iloc[-1]
+            final_balance = final_usdt_balance + final_ada_balance * data_with_balances["close"].iloc[-1]
 
-                # Calculate profit
-                profit = final_balance - 100  # Starting with 100 USDT
+            # Calculate profit
+            profit = final_balance - 100  # Starting with 100 USDT
 
-                # Check for the most profitable combination
-                if percentage_profit > best_profit:
-                    best_profit = percentage_profit
-                    best_combination = (ema_period, sma_period)
-                    best_timeframe = timeframe
-                    best_percentage_profit = percentage_profit
+            # Check for the most profitable combination
+            if percentage_profit > best_profit:
+                best_profit = percentage_profit
+                best_sma = (sma_period)
+                best_timeframe = timeframe
+                best_percentage_profit = percentage_profit
 
-    return best_combination, best_percentage_profit, best_timeframe
+    return best_sma, best_percentage_profit, best_timeframe
 
 # Simulatie van trading
 def main():

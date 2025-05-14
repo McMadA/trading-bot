@@ -1,7 +1,7 @@
 import ccxt
 
-API_KEY = '8JipCzXe9HTR6IRQC8'
-API_SECRET = 'xaH4j3bL3KPUkUdUjTTWRY6l3lS4XLUQ57oh'
+API_KEY = ''
+API_SECRET = ''
 
 # Gebruik de juiste ByBit API-URL voor de v5 API
 API_URL = 'https://api.bybit.nl'

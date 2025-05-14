@@ -5,8 +5,8 @@ import time
 from datetime import datetime
 
 # Configuratie
-API_KEY = "8JipCzXe9HTR6IRQC8"
-API_SECRET = "xaH4j3bL3KPUkUdUjTTWRY6l3lS4XLUQ57oh"
+API_KEY = ""
+API_SECRET = ""
 SYMBOL = "ADA/USDT"  # Handelspaar
 TIMEFRAME = "1h"  # Tijdframe van candles
 TRADE_ASSET = "USDT"  # Gebruik de beschikbare USDT voor de order

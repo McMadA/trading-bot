@@ -6,8 +6,8 @@ from datetime import datetime
 import multiprocessing
 
 # Configuratie
-API_KEY = "8JipCzXe9HTR6IRQC8"
-API_SECRET = "xaH4j3bL3KPUkUdUjTTWRY6l3lS4XLUQ57oh"
+API_KEY = ""
+API_SECRET = ""
 SYMBOL = "ADA/USDT"  # Handelspaar
 TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h"]  # Different timeframes for simulation
 TRADE_ASSET = "USDT"  # Gebruik de beschikbare USDT voor de order

@@ -5,8 +5,8 @@ import time
 from datetime import datetime
 
 # Configuratie
-API_KEY = "8JipCzXe9HTR6IRQC8"
-API_SECRET = "xaH4j3bL3KPUkUdUjTTWRY6l3lS4XLUQ57oh"
+API_KEY = ""
+API_SECRET = ""
 SYMBOL = "ADA/USDT"  # Handelspaar
 TIMEFRAMES = ["5m", "15m", "30m", "1h", "4h"]  # Different timeframes for simulation
 STANDARD_CANDLES = 1000  # Number of candles for 4h timeframe (standard)

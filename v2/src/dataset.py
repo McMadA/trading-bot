@@ -33,3 +33,32 @@ def get_binance_data(symbol, interval, start_date, end_date):
 
 # display the first few rows of the dataset
 print(get_binance_data('BTCUSDT', Client.KLINE_INTERVAL_1MINUTE, '2023-01-01', '2023-01-02').head())
+
+
+
+# ------------------------------------------------------------------------------------------------------------
+
+
+# Python file for getting latest prices from bitcoin coins from free Binance API using CCXT
+import ccxt
+def get_latest_prices(symbols):
+    """
+    Fetch the latest prices for a list of symbols from Binance.
+
+    :param symbols: List of trading pair symbols (e.g., ['BTC/USDT', 'ETH/USDT']).
+    :return: Dictionary with symbols as keys and their latest prices as values.
+    """
+    binance = ccxt.binance()
+    ticker = binance.fetch_tickers(symbols)
+    
+    # Extract the latest prices
+    latest_prices = {symbol: ticker[symbol]['last'] for symbol in symbols if symbol in ticker}
+    
+    return latest_prices
+
+  
+symbols = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT']
+prices = get_latest_prices(symbols)
+print(prices)
+
+    

@@ -75,14 +75,14 @@ def register_routes(app):
             return jsonify({"error": f"No data for {symbol}"}), 404
 
         return jsonify({
-            "timestamps": df["timestamp"].dt.isoformat().tolist(),
+            "timestamps": df["timestamp"].dt.strftime("%Y-%m-%dT%H:%M:%S").tolist(),
             "open": df["open"].tolist(),
             "high": df["high"].tolist(),
             "low": df["low"].tolist(),
             "close": df["close"].tolist(),
             "volume": df["volume"].tolist(),
             "indicators": {
-                col: df[col].tolist()
+                col: df[col].fillna(0).tolist()
                 for col in df.columns
                 if col not in ["timestamp", "open", "high", "low", "close", "volume"]
             },

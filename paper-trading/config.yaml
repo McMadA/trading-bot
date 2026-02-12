@@ -1,0 +1,55 @@
+exchange:
+  name: binance
+  sandbox: false  # Binance public API, no keys needed for market data
+
+trading:
+  pairs:
+    - BTC/USDT
+    - ETH/USDT
+    - SOL/USDT
+  default_timeframe: "15m"
+  initial_balance: 10000.0  # USDT
+  fee_rate: 0.001  # 0.1% simulated fee (Binance spot fee)
+
+strategy:
+  active: ema_sma_crossover  # or: rsi, combined
+  ema_sma_crossover:
+    ema_period: 10
+    sma_period: 20
+  rsi:
+    period: 14
+    overbought: 70
+    oversold: 30
+  combined:
+    ema_period: 10
+    sma_period: 20
+    rsi_period: 14
+    rsi_overbought: 70
+    rsi_oversold: 30
+
+risk_management:
+  max_position_pct: 0.25       # Max 25% of portfolio per position
+  stop_loss_pct: 0.03          # 3% stop-loss
+  take_profit_pct: 0.06        # 6% take-profit
+  max_open_positions: 4
+
+backtesting:
+  default_days: 30
+  data_limit: 1000
+
+scheduler:
+  interval_seconds: 60  # How often the engine checks for signals
+
+dashboard:
+  host: "0.0.0.0"
+  port: 5000
+  polling_interval_ms: 5000
+
+logging:
+  level: INFO
+  file: "logs/trading.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+
+database:
+  path: "data/paper_trading.db"

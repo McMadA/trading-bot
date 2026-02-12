@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Backtesting - Paper Trading</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+</head>
+<body>
+    <header class="header">
+        <h1>Backtesting</h1>
+        <div class="header-info">
+            <a href="/" class="btn btn-secondary">Back to Dashboard</a>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Backtest Form -->
+        <section class="section">
+            <h2>Configure Backtest</h2>
+            <div class="backtest-form">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Strategy</label>
+                        <select id="bt-strategy">
+                            <option value="ema_sma_crossover">EMA/SMA Crossover</option>
+                            <option value="rsi">RSI</option>
+                            <option value="combined">Combined</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Timeframe</label>
+                        <select id="bt-timeframe">
+                            <option value="5m">5 minutes</option>
+                            <option value="15m" selected>15 minutes</option>
+                            <option value="1h">1 hour</option>
+                            <option value="4h">4 hours</option>
+                            <option value="1d">1 day</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Days</label>
+                        <input type="number" id="bt-days" value="30" min="1" max="365">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Symbols (comma-separated)</label>
+                        <input type="text" id="bt-symbols" value="BTC/USDT" placeholder="BTC/USDT, ETH/USDT">
+                    </div>
+                </div>
+
+                <!-- Strategy-specific params -->
+                <div id="bt-strategy-params"></div>
+
+                <button onclick="runBacktest()" class="btn btn-primary" id="bt-run-btn">Run Backtest</button>
+                <span id="bt-loading" style="display:none; margin-left: 1rem;">Running...</span>
+            </div>
+        </section>
+
+        <!-- Results -->
+        <section class="section" id="bt-results" style="display:none;">
+            <h2>Results</h2>
+            <div class="cards">
+                <div class="card">
+                    <div class="card-label">Total Return</div>
+                    <div class="card-value" id="bt-return">0%</div>
+                </div>
+                <div class="card">
+                    <div class="card-label">Win Rate</div>
+                    <div class="card-value" id="bt-winrate">0%</div>
+                </div>
+                <div class="card">
+                    <div class="card-label">Total Trades</div>
+                    <div class="card-value" id="bt-trades">0</div>
+                </div>
+                <div class="card">
+                    <div class="card-label">Max Drawdown</div>
+                    <div class="card-value" id="bt-drawdown">0%</div>
+                </div>
+            </div>
+
+            <h3>Equity Curve</h3>
+            <div id="bt-equity-chart"></div>
+
+            <h3>Trade List</h3>
+            <div class="table-wrapper">
+                <table id="bt-trades-table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Entry</th>
+                            <th>Exit</th>
+                            <th>P&L</th>
+                            <th>P&L %</th>
+                            <th>Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        const STRATEGY_PARAMS = {
+            ema_sma_crossover: [
+                {key: "ema_period", label: "EMA Period", default: 10},
+                {key: "sma_period", label: "SMA Period", default: 20},
+            ],
+            rsi: [
+                {key: "period", label: "RSI Period", default: 14},
+                {key: "overbought", label: "Overbought", default: 70},
+                {key: "oversold", label: "Oversold", default: 30},
+            ],
+            combined: [
+                {key: "ema_period", label: "EMA Period", default: 10},
+                {key: "sma_period", label: "SMA Period", default: 20},
+                {key: "rsi_period", label: "RSI Period", default: 14},
+                {key: "rsi_overbought", label: "RSI Overbought", default: 70},
+                {key: "rsi_oversold", label: "RSI Oversold", default: 30},
+            ],
+        };
+
+        document.getElementById("bt-strategy").addEventListener("change", updateBtParams);
+        updateBtParams();
+
+        function updateBtParams() {
+            const strategy = document.getElementById("bt-strategy").value;
+            const params = STRATEGY_PARAMS[strategy] || [];
+            const container = document.getElementById("bt-strategy-params");
+            container.innerHTML = '<div class="form-row">' +
+                params.map(p =>
+                    `<div class="form-group">
+                        <label>${p.label}</label>
+                        <input type="number" id="bt-param-${p.key}" value="${p.default}">
+                    </div>`
+                ).join("") + '</div>';
+        }
+
+        async function runBacktest() {
+            const btn = document.getElementById("bt-run-btn");
+            const loading = document.getElementById("bt-loading");
+            btn.disabled = true;
+            loading.style.display = "inline";
+
+            const strategy = document.getElementById("bt-strategy").value;
+            const params = {};
+            (STRATEGY_PARAMS[strategy] || []).forEach(p => {
+                const el = document.getElementById("bt-param-" + p.key);
+                if (el) params[p.key] = parseFloat(el.value);
+            });
+
+            const symbols = document.getElementById("bt-symbols").value
+                .split(",").map(s => s.trim()).filter(s => s);
+
+            try {
+                const resp = await fetch("/api/backtest", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        strategy: strategy,
+                        params: params,
+                        symbols: symbols,
+                        timeframe: document.getElementById("bt-timeframe").value,
+                        days: parseInt(document.getElementById("bt-days").value),
+                    }),
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    displayResults(data);
+                } else {
+                    alert("Backtest failed: " + (data.error || "Unknown error"));
+                }
+            } catch (e) {
+                alert("Error: " + e.message);
+            } finally {
+                btn.disabled = false;
+                loading.style.display = "none";
+            }
+        }
+
+        function displayResults(data) {
+            document.getElementById("bt-results").style.display = "block";
+            document.getElementById("bt-return").textContent = data.total_return_pct.toFixed(2) + "%";
+            document.getElementById("bt-return").className = "card-value " + (data.total_return_pct >= 0 ? "positive" : "negative");
+            document.getElementById("bt-winrate").textContent = data.win_rate.toFixed(1) + "%";
+            document.getElementById("bt-trades").textContent = data.total_trades;
+            document.getElementById("bt-drawdown").textContent = data.max_drawdown_pct.toFixed(2) + "%";
+            document.getElementById("bt-drawdown").className = "card-value negative";
+
+            // Equity curve
+            if (data.equity_curve && data.equity_curve.length > 0) {
+                Plotly.newPlot("bt-equity-chart", [{
+                    x: data.equity_curve.map(p => p.timestamp),
+                    y: data.equity_curve.map(p => p.value),
+                    type: "scatter",
+                    mode: "lines",
+                    line: {color: "#00d4aa"},
+                }], {
+                    paper_bgcolor: "#1a1a2e",
+                    plot_bgcolor: "#16213e",
+                    font: {color: "#e0e0e0"},
+                    margin: {t: 20, b: 40, l: 60, r: 20},
+                    xaxis: {gridcolor: "#2a2a4e"},
+                    yaxis: {gridcolor: "#2a2a4e", title: "Portfolio Value ($)"},
+                }, {responsive: true});
+            }
+
+            // Trade list
+            const tbody = document.querySelector("#bt-trades-table tbody");
+            tbody.innerHTML = "";
+            (data.trades || []).forEach(t => {
+                const pnlClass = t.pnl >= 0 ? "positive" : "negative";
+                tbody.innerHTML += `<tr>
+                    <td>${t.symbol}</td>
+                    <td>${t.side}</td>
+                    <td>$${t.entry_price.toFixed(2)}</td>
+                    <td>$${t.exit_price.toFixed(2)}</td>
+                    <td class="${pnlClass}">$${t.pnl.toFixed(2)}</td>
+                    <td class="${pnlClass}">${t.pnl_pct.toFixed(2)}%</td>
+                    <td>${t.duration_minutes}m</td>
+                </tr>`;
+            });
+        }
+    </script>
+</body>
+</html>

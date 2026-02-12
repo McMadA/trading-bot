@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paper Trading Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <h1>Paper Trading Dashboard</h1>
+        <div class="header-info">
+            <span id="engine-status" class="status-badge offline">Offline</span>
+            <span id="strategy-name" class="strategy-badge">--</span>
+            <span id="timeframe-badge" class="timeframe-badge">--</span>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Portfolio Summary Cards -->
+        <section class="cards">
+            <div class="card">
+                <div class="card-label">Total Value</div>
+                <div class="card-value" id="total-value">$0.00</div>
+            </div>
+            <div class="card">
+                <div class="card-label">Cash Balance</div>
+                <div class="card-value" id="cash-balance">$0.00</div>
+            </div>
+            <div class="card">
+                <div class="card-label">Total P&L</div>
+                <div class="card-value" id="total-pnl">$0.00</div>
+            </div>
+            <div class="card">
+                <div class="card-label">P&L %</div>
+                <div class="card-value" id="total-pnl-pct">0.00%</div>
+            </div>
+        </section>
+
+        <!-- Price Ticker -->
+        <section class="price-ticker" id="price-ticker"></section>
+
+        <!-- Main Grid -->
+        <div class="main-grid">
+            <!-- Chart Section -->
+            <section class="chart-section">
+                <div class="section-header">
+                    <h2>Price Chart</h2>
+                    <select id="chart-pair-select" onchange="updateChart()"></select>
+                </div>
+                <div id="price-chart"></div>
+            </section>
+
+            <!-- Strategy Controls -->
+            <section class="strategy-section">
+                <h2>Strategy Controls</h2>
+                <div class="strategy-form">
+                    <label>Active Strategy</label>
+                    <select id="strategy-select">
+                        <option value="ema_sma_crossover">EMA/SMA Crossover</option>
+                        <option value="rsi">RSI</option>
+                        <option value="combined">Combined</option>
+                    </select>
+                    <div id="strategy-params"></div>
+                    <button onclick="applyStrategy()" class="btn btn-primary">Apply Strategy</button>
+                </div>
+
+                <!-- Performance Metrics -->
+                <h2 style="margin-top: 1.5rem;">Performance</h2>
+                <div class="metrics">
+                    <div class="metric"><span class="metric-label">Total Trades</span><span class="metric-value" id="metric-total-trades">0</span></div>
+                    <div class="metric"><span class="metric-label">Win Rate</span><span class="metric-value" id="metric-win-rate">0%</span></div>
+                    <div class="metric"><span class="metric-label">Avg P&L</span><span class="metric-value" id="metric-avg-pnl">$0.00</span></div>
+                    <div class="metric"><span class="metric-label">Best Trade</span><span class="metric-value" id="metric-best-trade">$0.00</span></div>
+                    <div class="metric"><span class="metric-label">Worst Trade</span><span class="metric-value" id="metric-worst-trade">$0.00</span></div>
+                    <div class="metric"><span class="metric-label">Total Fees</span><span class="metric-value" id="metric-total-fees">$0.00</span></div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Equity Curve -->
+        <section class="section">
+            <h2>Equity Curve</h2>
+            <div id="equity-chart"></div>
+        </section>
+
+        <!-- Positions Table -->
+        <section class="section">
+            <h2>Open Positions</h2>
+            <div class="table-wrapper">
+                <table id="positions-table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Quantity</th>
+                            <th>Entry Price</th>
+                            <th>Current Price</th>
+                            <th>Unrealized P&L</th>
+                            <th>Stop Loss</th>
+                            <th>Take Profit</th>
+                            <th>Opened</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <p class="empty-message" id="no-positions">No open positions</p>
+            </div>
+        </section>
+
+        <!-- Trade History -->
+        <section class="section">
+            <h2>Trade History</h2>
+            <div class="table-wrapper">
+                <table id="trades-table">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Entry Price</th>
+                            <th>Exit Price</th>
+                            <th>Quantity</th>
+                            <th>P&L</th>
+                            <th>P&L %</th>
+                            <th>Fees</th>
+                            <th>Strategy</th>
+                            <th>Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <p class="empty-message" id="no-trades">No completed trades</p>
+            </div>
+        </section>
+
+        <!-- Recent Orders -->
+        <section class="section">
+            <h2>Recent Orders</h2>
+            <div class="table-wrapper">
+                <table id="orders-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Symbol</th>
+                            <th>Side</th>
+                            <th>Type</th>
+                            <th>Quantity</th>
+                            <th>Price</th>
+                            <th>Status</th>
+                            <th>Fee</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                <p class="empty-message" id="no-orders">No orders yet</p>
+            </div>
+        </section>
+
+        <!-- Log Viewer -->
+        <section class="section">
+            <h2>System Logs</h2>
+            <div class="log-viewer" id="log-viewer"></div>
+        </section>
+    </div>
+
+    <script>
+        const POLLING_INTERVAL = {{ polling_interval }};
+    </script>
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

@@ -51,17 +51,36 @@
                     </div>
                 </div>
 
-                <!-- Strategy-specific params -->
+                <!-- Risk Management -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Initial Balance ($)</label>
+                        <input type="number" id="bt-initial-balance" value="10000" min="100" step="100">
+                    </div>
+                    <div class="form-group">
+                        <label>Stop Loss %</label>
+                        <input type="number" id="bt-stop-loss" value="3" min="0.1" max="50" step="0.1">
+                    </div>
+                    <div class="form-group">
+                        <label>Take Profit %</label>
+                        <input type="number" id="bt-take-profit" value="6" min="0.1" max="100" step="0.1">
+                    </div>
+                </div>
+
+                <!-- Strategy-specific params with sweep toggles -->
                 <div id="bt-strategy-params"></div>
 
-                <button onclick="runBacktest()" class="btn btn-primary" id="bt-run-btn">Run Backtest</button>
-                <span id="bt-loading" style="display:none; margin-left: 1rem;">Running...</span>
+                <div class="form-row" style="align-items: center;">
+                    <button onclick="handleRun()" class="btn btn-primary" id="bt-run-btn">Run Backtest</button>
+                    <span id="bt-loading" style="display:none; margin-left: 1rem; color: var(--text-secondary);">Running...</span>
+                    <span id="bt-combo-count" style="margin-left: 1rem; font-size: 0.85rem; color: var(--text-secondary);"></span>
+                </div>
             </div>
         </section>
 
-        <!-- Results -->
+        <!-- Single Run Results -->
         <section class="section" id="bt-results" style="display:none;">
-            <h2>Results</h2>
+            <h2>Latest Run Results</h2>
             <div class="cards">
                 <div class="card">
                     <div class="card-label">Total Return</div>
@@ -102,88 +121,305 @@
                 </table>
             </div>
         </section>
+
+        <!-- Comparison Table -->
+        <section class="section" id="bt-comparison-section" style="display:none;">
+            <div class="section-header">
+                <h2 style="margin-bottom:0;">Comparison Table</h2>
+                <button onclick="clearComparison()" class="btn btn-secondary btn-small">Clear All</button>
+            </div>
+            <div class="table-wrapper">
+                <table id="bt-comparison-table">
+                    <thead>
+                        <tr>
+                            <th class="sortable" data-key="run">#</th>
+                            <th class="sortable" data-key="strategy">Strategy</th>
+                            <th class="sortable" data-key="params">Parameters</th>
+                            <th class="sortable" data-key="total_return_pct">Return %</th>
+                            <th class="sortable" data-key="win_rate">Win Rate</th>
+                            <th class="sortable" data-key="total_trades">Trades</th>
+                            <th class="sortable" data-key="max_drawdown_pct">Max DD</th>
+                            <th class="sortable" data-key="avg_trade_pnl">Avg P&L</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </section>
     </div>
 
     <script>
+        // ==================== CONSTANTS ====================
+
         const STRATEGY_PARAMS = {
             ema_sma_crossover: [
-                {key: "ema_period", label: "EMA Period", default: 10},
-                {key: "sma_period", label: "SMA Period", default: 20},
+                {key: "ema_period", label: "EMA Period", default: 10, sweepMin: 5, sweepMax: 50, sweepStep: 5},
+                {key: "sma_period", label: "SMA Period", default: 20, sweepMin: 10, sweepMax: 100, sweepStep: 10},
             ],
             rsi: [
-                {key: "period", label: "RSI Period", default: 14},
-                {key: "overbought", label: "Overbought", default: 70},
-                {key: "oversold", label: "Oversold", default: 30},
+                {key: "period", label: "RSI Period", default: 14, sweepMin: 5, sweepMax: 30, sweepStep: 1},
+                {key: "overbought", label: "Overbought", default: 70, sweepMin: 60, sweepMax: 85, sweepStep: 5},
+                {key: "oversold", label: "Oversold", default: 30, sweepMin: 15, sweepMax: 40, sweepStep: 5},
             ],
             combined: [
-                {key: "ema_period", label: "EMA Period", default: 10},
-                {key: "sma_period", label: "SMA Period", default: 20},
-                {key: "rsi_period", label: "RSI Period", default: 14},
-                {key: "rsi_overbought", label: "RSI Overbought", default: 70},
-                {key: "rsi_oversold", label: "RSI Oversold", default: 30},
+                {key: "ema_period", label: "EMA Period", default: 10, sweepMin: 5, sweepMax: 50, sweepStep: 5},
+                {key: "sma_period", label: "SMA Period", default: 20, sweepMin: 10, sweepMax: 100, sweepStep: 10},
+                {key: "rsi_period", label: "RSI Period", default: 14, sweepMin: 5, sweepMax: 30, sweepStep: 1},
+                {key: "rsi_overbought", label: "RSI Overbought", default: 70, sweepMin: 60, sweepMax: 85, sweepStep: 5},
+                {key: "rsi_oversold", label: "RSI Oversold", default: 30, sweepMin: 15, sweepMax: 40, sweepStep: 5},
             ],
         };
 
+        const PLOTLY_LAYOUT = {
+            paper_bgcolor: "#1a1a2e",
+            plot_bgcolor: "#16213e",
+            font: {color: "#e0e0e0", size: 11},
+            margin: {t: 20, b: 40, l: 60, r: 20},
+            xaxis: {gridcolor: "#2a2a4e"},
+            yaxis: {gridcolor: "#2a2a4e", title: "Portfolio Value ($)"},
+        };
+
+        // ==================== STATE ====================
+
+        let comparisonResults = [];
+        let runCounter = 0;
+        let currentSort = {key: "run", asc: false};
+
+        // ==================== INIT ====================
+
         document.getElementById("bt-strategy").addEventListener("change", updateBtParams);
         updateBtParams();
+
+        // ==================== PARAMETER UI ====================
 
         function updateBtParams() {
             const strategy = document.getElementById("bt-strategy").value;
             const params = STRATEGY_PARAMS[strategy] || [];
             const container = document.getElementById("bt-strategy-params");
-            container.innerHTML = '<div class="form-row">' +
-                params.map(p =>
-                    `<div class="form-group">
+
+            container.innerHTML = params.map(p => `
+                <div class="form-row sweep-param-row">
+                    <div class="form-group" style="flex: 1;">
                         <label>${p.label}</label>
-                        <input type="number" id="bt-param-${p.key}" value="${p.default}">
-                    </div>`
-                ).join("") + '</div>';
+                        <div class="param-input-row">
+                            <input type="number" id="bt-param-${p.key}" value="${p.default}" class="param-single">
+                            <label class="sweep-toggle">
+                                <input type="checkbox" class="sweep-check" data-key="${p.key}"
+                                       onchange="toggleSweep('${p.key}'); updateComboCount();">
+                                Sweep
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-group sweep-range" id="sweep-${p.key}" style="display:none; flex: 2;">
+                        <label>Range</label>
+                        <div class="sweep-range-inputs">
+                            <input type="number" class="sweep-min" id="sweep-min-${p.key}" value="${p.sweepMin}" placeholder="Min" onchange="updateComboCount()">
+                            <span class="sweep-label">to</span>
+                            <input type="number" class="sweep-max" id="sweep-max-${p.key}" value="${p.sweepMax}" placeholder="Max" onchange="updateComboCount()">
+                            <span class="sweep-label">step</span>
+                            <input type="number" class="sweep-step" id="sweep-step-${p.key}" value="${p.sweepStep}" placeholder="Step" onchange="updateComboCount()">
+                        </div>
+                    </div>
+                </div>
+            `).join("");
+
+            updateComboCount();
         }
 
-        async function runBacktest() {
-            const btn = document.getElementById("bt-run-btn");
-            const loading = document.getElementById("bt-loading");
-            btn.disabled = true;
-            loading.style.display = "inline";
+        function toggleSweep(key) {
+            const rangeEl = document.getElementById("sweep-" + key);
+            const check = document.querySelector(`.sweep-check[data-key="${key}"]`);
+            rangeEl.style.display = check.checked ? "block" : "none";
+        }
 
+        function getActiveSweeps() {
+            const sweeps = {};
+            document.querySelectorAll(".sweep-check:checked").forEach(cb => {
+                const key = cb.dataset.key;
+                const min = parseFloat(document.getElementById("sweep-min-" + key).value);
+                const max = parseFloat(document.getElementById("sweep-max-" + key).value);
+                const step = parseFloat(document.getElementById("sweep-step-" + key).value);
+                if (step > 0 && min <= max) {
+                    let count = 0;
+                    for (let v = min; v <= max + 1e-9; v += step) count++;
+                    sweeps[key] = {min, max, step, count};
+                }
+            });
+            return sweeps;
+        }
+
+        function updateComboCount() {
+            const sweeps = getActiveSweeps();
+            const keys = Object.keys(sweeps);
+            const btn = document.getElementById("bt-run-btn");
+            const countEl = document.getElementById("bt-combo-count");
+
+            if (keys.length === 0) {
+                btn.textContent = "Run Backtest";
+                countEl.textContent = "";
+                return;
+            }
+
+            let total = 1;
+            keys.forEach(k => total *= sweeps[k].count);
+            btn.textContent = "Run Sweep (" + total + " combinations)";
+            countEl.textContent = keys.map(k => k + ": " + sweeps[k].count + " values").join(", ");
+        }
+
+        // ==================== COMMON HELPERS ====================
+
+        function getFormData() {
             const strategy = document.getElementById("bt-strategy").value;
+            const symbols = document.getElementById("bt-symbols").value
+                .split(",").map(s => s.trim()).filter(s => s);
+            const timeframe = document.getElementById("bt-timeframe").value;
+            const days = parseInt(document.getElementById("bt-days").value);
+            const initialBalance = parseFloat(document.getElementById("bt-initial-balance").value);
+            const stopLoss = parseFloat(document.getElementById("bt-stop-loss").value) / 100;
+            const takeProfit = parseFloat(document.getElementById("bt-take-profit").value) / 100;
+
             const params = {};
             (STRATEGY_PARAMS[strategy] || []).forEach(p => {
                 const el = document.getElementById("bt-param-" + p.key);
                 if (el) params[p.key] = parseFloat(el.value);
             });
 
-            const symbols = document.getElementById("bt-symbols").value
-                .split(",").map(s => s.trim()).filter(s => s);
+            return {strategy, symbols, timeframe, days, initialBalance, stopLoss, takeProfit, params};
+        }
+
+        function setLoading(on) {
+            const btn = document.getElementById("bt-run-btn");
+            const loading = document.getElementById("bt-loading");
+            btn.disabled = on;
+            loading.style.display = on ? "inline" : "none";
+        }
+
+        // ==================== RUN HANDLER ====================
+
+        function handleRun() {
+            const sweeps = getActiveSweeps();
+            if (Object.keys(sweeps).length > 0) {
+                runSweep(sweeps);
+            } else {
+                runBacktest();
+            }
+        }
+
+        // ==================== SINGLE BACKTEST ====================
+
+        async function runBacktest(overrideParams) {
+            setLoading(true);
+            const form = getFormData();
+            const params = overrideParams || form.params;
 
             try {
                 const resp = await fetch("/api/backtest", {
                     method: "POST",
                     headers: {"Content-Type": "application/json"},
                     body: JSON.stringify({
-                        strategy: strategy,
+                        strategy: form.strategy,
                         params: params,
-                        symbols: symbols,
-                        timeframe: document.getElementById("bt-timeframe").value,
-                        days: parseInt(document.getElementById("bt-days").value),
+                        symbols: form.symbols,
+                        timeframe: form.timeframe,
+                        days: form.days,
+                        initial_balance: form.initialBalance,
+                        stop_loss_pct: form.stopLoss,
+                        take_profit_pct: form.takeProfit,
                     }),
                 });
                 const data = await resp.json();
                 if (resp.ok) {
                     displayResults(data);
+                    addToComparison({
+                        strategy: form.strategy,
+                        params: params,
+                        total_return_pct: data.total_return_pct,
+                        win_rate: data.win_rate,
+                        total_trades: data.total_trades,
+                        max_drawdown_pct: data.max_drawdown_pct,
+                        avg_trade_pnl: data.avg_trade_pnl,
+                    });
                 } else {
                     alert("Backtest failed: " + (data.error || "Unknown error"));
                 }
             } catch (e) {
                 alert("Error: " + e.message);
             } finally {
-                btn.disabled = false;
-                loading.style.display = "none";
+                setLoading(false);
             }
         }
 
+        // ==================== SWEEP ====================
+
+        async function runSweep(sweeps) {
+            setLoading(true);
+            const form = getFormData();
+
+            // Build param_ranges and base_params
+            const paramRanges = {};
+            const baseParams = {};
+            const strategy = form.strategy;
+
+            (STRATEGY_PARAMS[strategy] || []).forEach(p => {
+                if (sweeps[p.key]) {
+                    paramRanges[p.key] = {
+                        min: sweeps[p.key].min,
+                        max: sweeps[p.key].max,
+                        step: sweeps[p.key].step,
+                    };
+                } else {
+                    baseParams[p.key] = parseFloat(document.getElementById("bt-param-" + p.key).value);
+                }
+            });
+
+            try {
+                const resp = await fetch("/api/backtest/sweep", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({
+                        strategy: strategy,
+                        symbols: form.symbols,
+                        timeframe: form.timeframe,
+                        days: form.days,
+                        initial_balance: form.initialBalance,
+                        stop_loss_pct: form.stopLoss,
+                        take_profit_pct: form.takeProfit,
+                        param_ranges: paramRanges,
+                        base_params: baseParams,
+                    }),
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    // Add all results to comparison table
+                    (data.sweep_results || []).forEach(r => {
+                        addToComparison({
+                            strategy: r.strategy_name || strategy,
+                            params: r.params,
+                            total_return_pct: r.total_return_pct,
+                            win_rate: r.win_rate,
+                            total_trades: r.total_trades,
+                            max_drawdown_pct: r.max_drawdown_pct,
+                            avg_trade_pnl: r.avg_trade_pnl,
+                        });
+                    });
+                    // Scroll to comparison table
+                    document.getElementById("bt-comparison-section").scrollIntoView({behavior: "smooth"});
+                } else {
+                    alert("Sweep failed: " + (data.error || "Unknown error"));
+                }
+            } catch (e) {
+                alert("Error: " + e.message);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        // ==================== DISPLAY SINGLE RESULTS ====================
+
         function displayResults(data) {
             document.getElementById("bt-results").style.display = "block";
+
             document.getElementById("bt-return").textContent = data.total_return_pct.toFixed(2) + "%";
             document.getElementById("bt-return").className = "card-value " + (data.total_return_pct >= 0 ? "positive" : "negative");
             document.getElementById("bt-winrate").textContent = data.win_rate.toFixed(1) + "%";
@@ -198,15 +434,10 @@
                     y: data.equity_curve.map(p => p.value),
                     type: "scatter",
                     mode: "lines",
-                    line: {color: "#00d4aa"},
-                }], {
-                    paper_bgcolor: "#1a1a2e",
-                    plot_bgcolor: "#16213e",
-                    font: {color: "#e0e0e0"},
-                    margin: {t: 20, b: 40, l: 60, r: 20},
-                    xaxis: {gridcolor: "#2a2a4e"},
-                    yaxis: {gridcolor: "#2a2a4e", title: "Portfolio Value ($)"},
-                }, {responsive: true});
+                    line: {color: "#00d4aa", width: 2},
+                    fill: "tozeroy",
+                    fillcolor: "rgba(0, 212, 170, 0.1)",
+                }], PLOTLY_LAYOUT, {responsive: true});
             }
 
             // Trade list
@@ -225,6 +456,119 @@
                 </tr>`;
             });
         }
+
+        // ==================== COMPARISON TABLE ====================
+
+        function addToComparison(result) {
+            runCounter++;
+            result.run = runCounter;
+            comparisonResults.push(result);
+            renderComparisonTable();
+        }
+
+        function renderComparisonTable() {
+            const section = document.getElementById("bt-comparison-section");
+            section.style.display = "block";
+
+            // Sort
+            const sorted = [...comparisonResults].sort((a, b) => {
+                const key = currentSort.key;
+                let va = key === "params" ? formatParams(a.params) : a[key];
+                let vb = key === "params" ? formatParams(b.params) : b[key];
+                if (typeof va === "string") {
+                    return currentSort.asc ? va.localeCompare(vb) : vb.localeCompare(va);
+                }
+                return currentSort.asc ? va - vb : vb - va;
+            });
+
+            // Find best return
+            let bestIdx = -1;
+            let bestReturn = -Infinity;
+            sorted.forEach((r, i) => {
+                if (r.total_return_pct > bestReturn) {
+                    bestReturn = r.total_return_pct;
+                    bestIdx = i;
+                }
+            });
+
+            const tbody = document.querySelector("#bt-comparison-table tbody");
+            tbody.innerHTML = "";
+
+            sorted.forEach((r, i) => {
+                const returnClass = r.total_return_pct >= 0 ? "positive" : "negative";
+                const rowClass = i === bestIdx ? "best-result" : "";
+                const paramsStr = formatParams(r.params);
+                const paramsJson = JSON.stringify(r.params).replace(/"/g, "&quot;");
+
+                tbody.innerHTML += `<tr class="${rowClass}">
+                    <td>${r.run}</td>
+                    <td>${formatStrategyName(r.strategy)}</td>
+                    <td class="params-cell">${paramsStr}</td>
+                    <td class="${returnClass}">${r.total_return_pct.toFixed(2)}%</td>
+                    <td>${r.win_rate.toFixed(1)}%</td>
+                    <td>${r.total_trades}</td>
+                    <td class="negative">${r.max_drawdown_pct.toFixed(2)}%</td>
+                    <td>${r.avg_trade_pnl.toFixed(2)}</td>
+                    <td><button class="btn btn-secondary btn-small" onclick='runDetailedBacktest(${paramsJson})'>Details</button></td>
+                </tr>`;
+            });
+
+            // Update sort indicators
+            document.querySelectorAll("#bt-comparison-table th.sortable").forEach(th => {
+                th.classList.remove("sort-asc", "sort-desc");
+                if (th.dataset.key === currentSort.key) {
+                    th.classList.add(currentSort.asc ? "sort-asc" : "sort-desc");
+                }
+            });
+        }
+
+        function formatParams(params) {
+            if (!params) return "";
+            return Object.entries(params).map(([k, v]) => k + "=" + v).join(", ");
+        }
+
+        function formatStrategyName(name) {
+            const names = {
+                ema_sma_crossover: "EMA/SMA",
+                rsi: "RSI",
+                combined: "Combined",
+            };
+            return names[name] || name;
+        }
+
+        function clearComparison() {
+            comparisonResults = [];
+            runCounter = 0;
+            document.getElementById("bt-comparison-section").style.display = "none";
+        }
+
+        function runDetailedBacktest(params) {
+            // Fill in form values from the params
+            for (const [key, value] of Object.entries(params)) {
+                const el = document.getElementById("bt-param-" + key);
+                if (el) el.value = value;
+            }
+            // Run single backtest with those params
+            runBacktest(params);
+            // Scroll to results
+            setTimeout(() => {
+                document.getElementById("bt-results").scrollIntoView({behavior: "smooth"});
+            }, 200);
+        }
+
+        // Sortable column click handler
+        document.querySelectorAll("#bt-comparison-table th.sortable").forEach(th => {
+            th.addEventListener("click", () => {
+                const key = th.dataset.key;
+                if (currentSort.key === key) {
+                    currentSort.asc = !currentSort.asc;
+                } else {
+                    currentSort.key = key;
+                    currentSort.asc = key === "run" || key === "strategy" || key === "params";
+                }
+                renderComparisonTable();
+            });
+        });
     </script>
 </body>
 </html>

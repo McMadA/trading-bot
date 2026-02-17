@@ -27,6 +27,12 @@ class BacktestResult:
         self.max_drawdown_pct: float = 0.0
         self.total_trades: int = 0
         self.avg_trade_pnl: float = 0.0
+        # Metadata for comparison
+        self.strategy_name: str = ""
+        self.strategy_params: dict = {}
+        self.initial_balance: float = 10000.0
+        self.stop_loss_pct: float = 0.0
+        self.take_profit_pct: float = 0.0
 
 
 class Backtester:
@@ -39,24 +45,47 @@ class Backtester:
         self._config = config
         self._exchange = exchange
 
+    def fetch_historical_data(self, symbols: list[str], timeframe: str,
+                              days: int) -> dict:
+        """Fetch historical data for multiple symbols. Returns {symbol: DataFrame}.
+
+        Public method so sweep callers can fetch once and reuse across runs.
+        """
+        data = {}
+        for symbol in symbols:
+            df = self._fetch_historical_data(symbol, timeframe, days)
+            if df is not None and len(df) > 0:
+                data[symbol] = df
+        return data
+
     def run(self, strategy_name: str, strategy_params: dict,
             symbols: list[str], timeframe: str, days: int = 30,
-            initial_balance: float = 10000.0) -> BacktestResult:
-        """Execute a full backtest."""
+            initial_balance: float = 10000.0,
+            stop_loss_pct: float = None,
+            take_profit_pct: float = None,
+            historical_data: dict = None) -> BacktestResult:
+        """Execute a full backtest.
+
+        Args:
+            stop_loss_pct: Override config stop-loss (e.g. 0.03 for 3%). None = use config.
+            take_profit_pct: Override config take-profit (e.g. 0.06 for 6%). None = use config.
+            historical_data: Pre-fetched {symbol: DataFrame}. None = fetch internally.
+        """
         logger.info(
             f"Starting backtest: strategy={strategy_name}, "
             f"symbols={symbols}, timeframe={timeframe}, days={days}"
         )
 
+        # Resolve SL/TP values
+        sl_pct = stop_loss_pct if stop_loss_pct is not None else self._config.get("risk_management.stop_loss_pct", 0.03)
+        tp_pct = take_profit_pct if take_profit_pct is not None else self._config.get("risk_management.take_profit_pct", 0.06)
+
         # Create strategy instance
         strategy = self._create_strategy(strategy_name, strategy_params)
 
-        # Fetch historical data for all symbols
-        historical_data = {}
-        for symbol in symbols:
-            df = self._fetch_historical_data(symbol, timeframe, days)
-            if df is not None and len(df) > 0:
-                historical_data[symbol] = df
+        # Fetch historical data for all symbols (or use pre-fetched)
+        if historical_data is None:
+            historical_data = self.fetch_historical_data(symbols, timeframe, days)
 
         if not historical_data:
             logger.warning("No historical data available for backtest")
@@ -131,8 +160,6 @@ class Backtester:
                 # Set SL/TP for buy orders
                 if (signal.side == OrderSide.BUY and order
                         and order.status.value == "filled"):
-                    sl_pct = self._config.get("risk_management.stop_loss_pct", 0.03)
-                    tp_pct = self._config.get("risk_management.take_profit_pct", 0.06)
                     position = portfolio.get_position(signal.symbol)
                     if position:
                         position.stop_loss_price = price * (1 - sl_pct)
@@ -168,6 +195,13 @@ class Backtester:
 
         # Calculate max drawdown
         result.max_drawdown_pct = self._calculate_max_drawdown(snapshots)
+
+        # Store metadata for comparison
+        result.strategy_name = strategy_name
+        result.strategy_params = dict(strategy_params)
+        result.initial_balance = initial_balance
+        result.stop_loss_pct = sl_pct
+        result.take_profit_pct = tp_pct
 
         logger.info(
             f"Backtest complete: {result.total_trades} trades, "

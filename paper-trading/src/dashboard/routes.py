@@ -152,6 +152,9 @@ def register_routes(app):
             symbols=data.get("symbols", ["BTC/USDT"]),
             timeframe=data.get("timeframe", "1h"),
             days=data.get("days", 30),
+            initial_balance=data.get("initial_balance", 10000.0),
+            stop_loss_pct=data.get("stop_loss_pct"),
+            take_profit_pct=data.get("take_profit_pct"),
         )
 
         return jsonify({
@@ -162,6 +165,110 @@ def register_routes(app):
             "avg_trade_pnl": result.avg_trade_pnl,
             "equity_curve": result.equity_curve,
             "trades": [_serialize_trade(t) for t in result.trades],
+            "strategy_name": result.strategy_name,
+            "strategy_params": result.strategy_params,
+            "initial_balance": result.initial_balance,
+            "stop_loss_pct": result.stop_loss_pct,
+            "take_profit_pct": result.take_profit_pct,
+        })
+
+    @app.route("/api/backtest/sweep", methods=["POST"])
+    def api_run_backtest_sweep():
+        """Run backtests across multiple parameter combinations."""
+        from ..trading.backtester import Backtester
+        import itertools
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Missing request body"}), 400
+
+        engine = _get_engine()
+        config = _get_config()
+
+        strategy_name = data.get("strategy", "ema_sma_crossover")
+        symbols = data.get("symbols", ["BTC/USDT"])
+        timeframe = data.get("timeframe", "1h")
+        days = data.get("days", 30)
+        initial_balance = data.get("initial_balance", 10000.0)
+        stop_loss_pct = data.get("stop_loss_pct")
+        take_profit_pct = data.get("take_profit_pct")
+        param_ranges = data.get("param_ranges", {})
+        base_params = data.get("base_params", {})
+
+        # Generate all parameter combinations from ranges
+        param_names = list(param_ranges.keys())
+        param_value_lists = []
+        for name in param_names:
+            r = param_ranges[name]
+            min_val = r["min"]
+            max_val = r["max"]
+            step = r["step"]
+            if step <= 0:
+                return jsonify({"error": f"Step for '{name}' must be > 0"}), 400
+            values = []
+            v = min_val
+            while v <= max_val + 1e-9:
+                values.append(round(v, 6))
+                v += step
+            param_value_lists.append(values)
+
+        if not param_names:
+            return jsonify({"error": "No parameter ranges specified"}), 400
+
+        combinations = list(itertools.product(*param_value_lists))
+
+        MAX_COMBINATIONS = 500
+        if len(combinations) > MAX_COMBINATIONS:
+            return jsonify({
+                "error": f"Too many combinations ({len(combinations)}). "
+                         f"Max is {MAX_COMBINATIONS}. Narrow your ranges or increase step size."
+            }), 400
+
+        # Fetch historical data ONCE
+        backtester = Backtester(config, engine._exchange)
+        historical_data = backtester.fetch_historical_data(symbols, timeframe, days)
+
+        if not historical_data:
+            return jsonify({"error": "No historical data available"}), 400
+
+        # Run each combination
+        results = []
+        for combo in combinations:
+            params = {**base_params, **dict(zip(param_names, combo))}
+            try:
+                result = backtester.run(
+                    strategy_name=strategy_name,
+                    strategy_params=params,
+                    symbols=symbols,
+                    timeframe=timeframe,
+                    days=days,
+                    initial_balance=initial_balance,
+                    stop_loss_pct=stop_loss_pct,
+                    take_profit_pct=take_profit_pct,
+                    historical_data=historical_data,
+                )
+                results.append({
+                    "params": params,
+                    "total_return_pct": result.total_return_pct,
+                    "win_rate": result.win_rate,
+                    "max_drawdown_pct": result.max_drawdown_pct,
+                    "total_trades": result.total_trades,
+                    "avg_trade_pnl": result.avg_trade_pnl,
+                    "strategy_name": strategy_name,
+                })
+            except Exception as e:
+                logger.warning(f"Sweep combination {params} failed: {e}")
+
+        # Sort by total return descending
+        results.sort(key=lambda r: r["total_return_pct"], reverse=True)
+
+        return jsonify({
+            "sweep_results": results,
+            "total_combinations": len(combinations),
+            "strategy": strategy_name,
+            "symbols": symbols,
+            "timeframe": timeframe,
+            "days": days,
         })
 
     # ==================== SERIALIZATION HELPERS ====================

@@ -378,3 +378,87 @@ select:focus, input:focus {
 .param-row input {
     width: 80px;
 }
+
+/* Sweep mode */
+.sweep-param-row {
+    align-items: flex-end;
+}
+
+.param-input-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.param-single {
+    flex: 1;
+}
+
+.sweep-toggle {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.sweep-toggle input[type="checkbox"] {
+    width: auto;
+    accent-color: var(--accent);
+}
+
+.sweep-range-inputs {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+}
+
+.sweep-range-inputs input {
+    width: 80px;
+}
+
+.sweep-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+/* Comparison table */
+.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+.sortable:hover {
+    color: var(--accent);
+}
+
+.sortable.sort-asc::after {
+    content: " \25B2";
+    font-size: 0.65rem;
+}
+
+.sortable.sort-desc::after {
+    content: " \25BC";
+    font-size: 0.65rem;
+}
+
+.params-cell {
+    font-size: 0.8rem;
+    max-width: 250px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+tr.best-result {
+    background: rgba(0, 212, 170, 0.08);
+    border-left: 3px solid var(--positive);
+}
+
+.btn-small {
+    padding: 0.2rem 0.6rem;
+    font-size: 0.75rem;
+}

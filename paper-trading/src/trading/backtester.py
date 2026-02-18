@@ -11,9 +11,19 @@ import pandas as pd
 from ..data.models import OrderType, OrderSide, TradeRecord
 from ..data.database import Database
 from .portfolio import Portfolio
-from .strategy import BaseStrategy, EMASMACrossoverStrategy, RSIStrategy, CombinedStrategy
+from .strategy import (
+    BaseStrategy, EMASMACrossoverStrategy, RSIStrategy, CombinedStrategy,
+    DEFAULT_EMA_PERIOD, DEFAULT_SMA_PERIOD, DEFAULT_RSI_PERIOD
+)
 
 logger = logging.getLogger(__name__)
+
+# Default Simulation Parameters
+DEFAULT_INITIAL_BALANCE = 10000.0
+DEFAULT_BACKTEST_DAYS = 30
+DEFAULT_FEE_RATE = 0.001
+DEFAULT_STOP_LOSS_PCT = 0.03
+DEFAULT_TAKE_PROFIT_PCT = 0.06
 
 
 class BacktestResult:
@@ -30,7 +40,7 @@ class BacktestResult:
         # Metadata for comparison
         self.strategy_name: str = ""
         self.strategy_params: dict = {}
-        self.initial_balance: float = 10000.0
+        self.initial_balance: float = DEFAULT_INITIAL_BALANCE
         self.stop_loss_pct: float = 0.0
         self.take_profit_pct: float = 0.0
 
@@ -59,8 +69,8 @@ class Backtester:
         return data
 
     def run(self, strategy_name: str, strategy_params: dict,
-            symbols: list[str], timeframe: str, days: int = 30,
-            initial_balance: float = 10000.0,
+            symbols: list[str], timeframe: str, days: int = DEFAULT_BACKTEST_DAYS,
+            initial_balance: float = DEFAULT_INITIAL_BALANCE,
             stop_loss_pct: float = None,
             take_profit_pct: float = None,
             historical_data: dict = None) -> BacktestResult:
@@ -77,8 +87,8 @@ class Backtester:
         )
 
         # Resolve SL/TP values
-        sl_pct = stop_loss_pct if stop_loss_pct is not None else self._config.get("risk_management.stop_loss_pct", 0.03)
-        tp_pct = take_profit_pct if take_profit_pct is not None else self._config.get("risk_management.take_profit_pct", 0.06)
+        sl_pct = stop_loss_pct if stop_loss_pct is not None else self._config.get("risk_management.stop_loss_pct", DEFAULT_STOP_LOSS_PCT)
+        tp_pct = take_profit_pct if take_profit_pct is not None else self._config.get("risk_management.take_profit_pct", DEFAULT_TAKE_PROFIT_PCT)
 
         # Create strategy instance
         strategy = self._create_strategy(strategy_name, strategy_params)
@@ -96,7 +106,7 @@ class Backtester:
         db = Database(":memory:")
         portfolio = Portfolio(
             initial_balance=initial_balance,
-            fee_rate=self._config.get("trading.fee_rate", 0.001),
+            fee_rate=self._config.get("trading.fee_rate", DEFAULT_FEE_RATE),
             db=db,
             config=self._config,
         )
@@ -104,10 +114,10 @@ class Backtester:
         # Determine the common index range
         min_len = min(len(df) for df in historical_data.values())
         warmup = max(
-            strategy_params.get("ema_period", 20),
-            strategy_params.get("sma_period", 20),
-            strategy_params.get("period", 14),
-            strategy_params.get("rsi_period", 14),
+            strategy_params.get("ema_period", DEFAULT_EMA_PERIOD),
+            strategy_params.get("sma_period", DEFAULT_SMA_PERIOD),
+            strategy_params.get("period", DEFAULT_RSI_PERIOD),
+            strategy_params.get("rsi_period", DEFAULT_RSI_PERIOD),
         ) + 5  # Extra padding for indicator warmup
 
         if min_len <= warmup:

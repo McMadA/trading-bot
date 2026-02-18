@@ -4,7 +4,10 @@ import logging
 import threading
 import uuid
 import time
+import itertools
+from concurrent.futures import ProcessPoolExecutor
 from flask import render_template, jsonify, request
+from ..trading.backtester import run_backtest_simulation
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +15,23 @@ logger = logging.getLogger(__name__)
 # Structure: { task_id: { "status": "running"|"completed"|"error", "progress": int, "result": dict, "error_msg": str, "timestamp": float } }
 BACKTEST_TASKS = {}
 MAX_TASK_AGE_SECONDS = 3600  # Clean up tasks older than 1 hour
+# Global variable to hold historical data in worker processes
+_worker_historical_data = None
+
+
+def _init_worker(historical_data):
+    """Initialize worker process with historical data."""
+    global _worker_historical_data
+    _worker_historical_data = historical_data
+
+
+def _run_simulation_task(kwargs):
+    """Wrapper to run simulation using global historical data."""
+    global _worker_historical_data
+    return run_backtest_simulation(
+        historical_data=_worker_historical_data,
+        **kwargs
+    )
 
 
 def register_routes(app):
@@ -308,6 +328,9 @@ def register_routes(app):
 
     @app.route("/api/backtest/sweep", methods=["POST"])
     def api_run_backtest_sweep():
+        """Run backtests across multiple parameter combinations."""
+        from ..trading.backtester import Backtester
+
         data = request.get_json()
         if not data:
             return jsonify({"error": "Missing request body"}), 400
@@ -351,6 +374,95 @@ def register_routes(app):
     def api_backtest_status(task_id):
         if task_id not in BACKTEST_TASKS:
             return jsonify({"error": "Task not found"}), 404
+        strategy_name = data.get("strategy", "ema_sma_crossover")
+        symbols = data.get("symbols", ["BTC/USDT"])
+        timeframe = data.get("timeframe", "1h")
+        days = data.get("days", 30)
+        initial_balance = data.get("initial_balance", 10000.0)
+        stop_loss_pct = data.get("stop_loss_pct")
+        take_profit_pct = data.get("take_profit_pct")
+        param_ranges = data.get("param_ranges", {})
+        base_params = data.get("base_params", {})
+
+        # Generate all parameter combinations from ranges
+        param_names = list(param_ranges.keys())
+        param_value_lists = []
+        for name in param_names:
+            r = param_ranges[name]
+            min_val = r["min"]
+            max_val = r["max"]
+            step = r["step"]
+            if step <= 0:
+                return jsonify({"error": f"Step for '{name}' must be > 0"}), 400
+            values = []
+            v = min_val
+            while v <= max_val + 1e-9:
+                values.append(round(v, 6))
+                v += step
+            param_value_lists.append(values)
+
+        if not param_names:
+            return jsonify({"error": "No parameter ranges specified"}), 400
+
+        combinations = list(itertools.product(*param_value_lists))
+
+        MAX_COMBINATIONS = 500
+        if len(combinations) > MAX_COMBINATIONS:
+            return jsonify({
+                "error": f"Too many combinations ({len(combinations)}). "
+                         f"Max is {MAX_COMBINATIONS}. Narrow your ranges or increase step size."
+            }), 400
+
+        # Fetch historical data ONCE
+        backtester = Backtester(config, engine._exchange)
+        historical_data = backtester.fetch_historical_data(symbols, timeframe, days)
+
+        if not historical_data:
+            return jsonify({"error": "No historical data available"}), 400
+
+        # Prepare tasks for parallel execution
+        tasks = []
+        for combo in combinations:
+            params = {**base_params, **dict(zip(param_names, combo))}
+            task_kwargs = {
+                "config": config,
+                "strategy_name": strategy_name,
+                "strategy_params": params,
+                "symbols": symbols,
+                "timeframe": timeframe,
+                "days": days,
+                "initial_balance": initial_balance,
+                "stop_loss_pct": stop_loss_pct,
+                "take_profit_pct": take_profit_pct,
+            }
+            tasks.append(task_kwargs)
+
+        results = []
+        try:
+            with ProcessPoolExecutor(initializer=_init_worker, initargs=(historical_data,)) as executor:
+                futures = [executor.submit(_run_simulation_task, kwargs) for kwargs in tasks]
+
+                for future, task_kwargs in zip(futures, tasks):
+                    params = task_kwargs["strategy_params"]
+                    try:
+                        result = future.result()
+                        results.append({
+                            "params": params,
+                            "total_return_pct": result.total_return_pct,
+                            "win_rate": result.win_rate,
+                            "max_drawdown_pct": result.max_drawdown_pct,
+                            "total_trades": result.total_trades,
+                            "avg_trade_pnl": result.avg_trade_pnl,
+                            "strategy_name": strategy_name,
+                        })
+                    except Exception as e:
+                        logger.warning(f"Sweep combination {params} failed: {e}")
+        except Exception as e:
+            logger.error(f"Error in parallel execution: {e}")
+            return jsonify({"error": f"Backtest sweep failed: {e}"}), 500
+
+        # Sort by total return descending
+        results.sort(key=lambda r: r["total_return_pct"], reverse=True)
 
         task = BACKTEST_TASKS[task_id]
         return jsonify({

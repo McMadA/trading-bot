@@ -1,6 +1,7 @@
 """Trading strategies with pluggable architecture."""
 
 from abc import ABC, abstractmethod
+from typing import Optional
 import pandas as pd
 from ta.trend import EMAIndicator, SMAIndicator
 from ta.momentum import RSIIndicator
@@ -38,13 +39,15 @@ class BaseStrategy(ABC):
         self._config = config
 
     @abstractmethod
-    def generate_signals(self, data: dict, current_positions: dict) -> list:
+    def generate_signals(self, data: dict, current_positions: dict, index: Optional[int] = None) -> list:
         """
         Given OHLCV data for all symbols and current positions,
         return a list of Signals (may be empty).
 
         data: {symbol: DataFrame with [timestamp, open, high, low, close, volume]}
         current_positions: {symbol: Position or None}
+        index: Optional index to check for signals. If None, checks the latest data.
+               If provided, assumes data already has indicators calculated.
         """
         pass
 
@@ -74,17 +77,22 @@ class EMASMACrossoverStrategy(BaseStrategy):
         df["sma"] = sma.sma_indicator()
         return df
 
-    def generate_signals(self, data, current_positions) -> list:
+    def generate_signals(self, data, current_positions, index: Optional[int] = None) -> list:
         signals = []
         for symbol, df in data.items():
-            df = self.calculate_indicators(df)
-
-            if len(df) < 3:
-                continue
-
-            # Use last two completed candles (skip current incomplete candle)
-            last = df.iloc[-2]
-            prev = df.iloc[-3]
+            if index is None:
+                df = self.calculate_indicators(df)
+                if len(df) < 3:
+                    continue
+                # Use last two completed candles (skip current incomplete candle)
+                last = df.iloc[-2]
+                prev = df.iloc[-3]
+            else:
+                # Optimized backtest: indicators already present
+                if index < 2:
+                    continue
+                last = df.iloc[index - 1]
+                prev = df.iloc[index - 2]
 
             if pd.isna(last["ema"]) or pd.isna(last["sma"]):
                 continue
@@ -134,16 +142,20 @@ class RSIStrategy(BaseStrategy):
         df["rsi"] = rsi.rsi()
         return df
 
-    def generate_signals(self, data, current_positions) -> list:
+    def generate_signals(self, data, current_positions, index: Optional[int] = None) -> list:
         signals = []
         for symbol, df in data.items():
-            df = self.calculate_indicators(df)
-
-            if len(df) < 3:
-                continue
-
-            last = df.iloc[-2]
-            prev = df.iloc[-3]
+            if index is None:
+                df = self.calculate_indicators(df)
+                if len(df) < 3:
+                    continue
+                last = df.iloc[-2]
+                prev = df.iloc[-3]
+            else:
+                if index < 2:
+                    continue
+                last = df.iloc[index - 1]
+                prev = df.iloc[index - 2]
 
             if pd.isna(last["rsi"]) or pd.isna(prev["rsi"]):
                 continue
@@ -197,16 +209,20 @@ class CombinedStrategy(BaseStrategy):
         df["rsi"] = rsi.rsi()
         return df
 
-    def generate_signals(self, data, current_positions) -> list:
+    def generate_signals(self, data, current_positions, index: Optional[int] = None) -> list:
         signals = []
         for symbol, df in data.items():
-            df = self.calculate_indicators(df)
-
-            if len(df) < 3:
-                continue
-
-            last = df.iloc[-2]
-            prev = df.iloc[-3]
+            if index is None:
+                df = self.calculate_indicators(df)
+                if len(df) < 3:
+                    continue
+                last = df.iloc[-2]
+                prev = df.iloc[-3]
+            else:
+                if index < 2:
+                    continue
+                last = df.iloc[index - 1]
+                prev = df.iloc[index - 2]
 
             required = ["ema", "sma", "rsi"]
             if any(pd.isna(last[c]) or pd.isna(prev[c]) for c in required):

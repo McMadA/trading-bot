@@ -16,16 +16,23 @@ class Database:
     def __init__(self, db_path: str):
         self._db_path = db_path
         self._write_lock = threading.Lock()
+        self._memory_conn = None
+        if db_path == ":memory:":
+            self._memory_conn = sqlite3.connect(":memory:", check_same_thread=False)
+            self._memory_conn.row_factory = sqlite3.Row
         self._init_tables()
 
     @contextmanager
     def _get_connection(self):
-        conn = sqlite3.connect(self._db_path, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        try:
-            yield conn
-        finally:
-            conn.close()
+        if self._memory_conn:
+            yield self._memory_conn
+        else:
+            conn = sqlite3.connect(self._db_path, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            try:
+                yield conn
+            finally:
+                conn.close()
 
     def _init_tables(self):
         with self._get_connection() as conn:

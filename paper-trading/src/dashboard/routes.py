@@ -1,9 +1,30 @@
 """Flask routes — API endpoints and page routes."""
 
 import logging
+import itertools
+from concurrent.futures import ProcessPoolExecutor
 from flask import render_template, jsonify, request
+from ..trading.backtester import run_backtest_simulation
 
 logger = logging.getLogger(__name__)
+
+# Global variable to hold historical data in worker processes
+_worker_historical_data = None
+
+
+def _init_worker(historical_data):
+    """Initialize worker process with historical data."""
+    global _worker_historical_data
+    _worker_historical_data = historical_data
+
+
+def _run_simulation_task(kwargs):
+    """Wrapper to run simulation using global historical data."""
+    global _worker_historical_data
+    return run_backtest_simulation(
+        historical_data=_worker_historical_data,
+        **kwargs
+    )
 
 
 def register_routes(app):
@@ -176,7 +197,6 @@ def register_routes(app):
     def api_run_backtest_sweep():
         """Run backtests across multiple parameter combinations."""
         from ..trading.backtester import Backtester
-        import itertools
 
         data = request.get_json()
         if not data:
@@ -231,33 +251,46 @@ def register_routes(app):
         if not historical_data:
             return jsonify({"error": "No historical data available"}), 400
 
-        # Run each combination
-        results = []
+        # Prepare tasks for parallel execution
+        tasks = []
         for combo in combinations:
             params = {**base_params, **dict(zip(param_names, combo))}
-            try:
-                result = backtester.run(
-                    strategy_name=strategy_name,
-                    strategy_params=params,
-                    symbols=symbols,
-                    timeframe=timeframe,
-                    days=days,
-                    initial_balance=initial_balance,
-                    stop_loss_pct=stop_loss_pct,
-                    take_profit_pct=take_profit_pct,
-                    historical_data=historical_data,
-                )
-                results.append({
-                    "params": params,
-                    "total_return_pct": result.total_return_pct,
-                    "win_rate": result.win_rate,
-                    "max_drawdown_pct": result.max_drawdown_pct,
-                    "total_trades": result.total_trades,
-                    "avg_trade_pnl": result.avg_trade_pnl,
-                    "strategy_name": strategy_name,
-                })
-            except Exception as e:
-                logger.warning(f"Sweep combination {params} failed: {e}")
+            task_kwargs = {
+                "config": config,
+                "strategy_name": strategy_name,
+                "strategy_params": params,
+                "symbols": symbols,
+                "timeframe": timeframe,
+                "days": days,
+                "initial_balance": initial_balance,
+                "stop_loss_pct": stop_loss_pct,
+                "take_profit_pct": take_profit_pct,
+            }
+            tasks.append(task_kwargs)
+
+        results = []
+        try:
+            with ProcessPoolExecutor(initializer=_init_worker, initargs=(historical_data,)) as executor:
+                futures = [executor.submit(_run_simulation_task, kwargs) for kwargs in tasks]
+
+                for future, task_kwargs in zip(futures, tasks):
+                    params = task_kwargs["strategy_params"]
+                    try:
+                        result = future.result()
+                        results.append({
+                            "params": params,
+                            "total_return_pct": result.total_return_pct,
+                            "win_rate": result.win_rate,
+                            "max_drawdown_pct": result.max_drawdown_pct,
+                            "total_trades": result.total_trades,
+                            "avg_trade_pnl": result.avg_trade_pnl,
+                            "strategy_name": strategy_name,
+                        })
+                    except Exception as e:
+                        logger.warning(f"Sweep combination {params} failed: {e}")
+        except Exception as e:
+            logger.error(f"Error in parallel execution: {e}")
+            return jsonify({"error": f"Backtest sweep failed: {e}"}), 500
 
         # Sort by total return descending
         results.sort(key=lambda r: r["total_return_pct"], reverse=True)

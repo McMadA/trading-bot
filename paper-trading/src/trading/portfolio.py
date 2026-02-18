@@ -272,6 +272,7 @@ class Portfolio:
     def update_positions(self, current_prices: dict[str, float]):
         """Update current prices and unrealized P&L for all open positions."""
         with self._lock:
+            updated_positions = []
             for symbol, position in list(self._positions.items()):
                 price = current_prices.get(symbol)
                 if price is None:
@@ -281,9 +282,15 @@ class Portfolio:
                 position.unrealized_pnl = (
                     (price - position.entry_price) * position.quantity
                 )
-                self._db.update_position(position)
 
                 self._check_stop_loss_take_profit(position, price)
+
+                # If position is still open (not closed by SL/TP), add to batch update
+                if symbol in self._positions:
+                    updated_positions.append(position)
+
+            if updated_positions:
+                self._db.update_positions_batch(updated_positions)
 
     def _check_stop_loss_take_profit(self, position: Position, current_price: float):
         """Auto-close position if SL or TP is hit."""

@@ -206,6 +206,30 @@ class Database:
                 )
                 conn.commit()
 
+    def update_positions_batch(self, positions: list[Position]):
+        if not positions:
+            return
+        with self._write_lock:
+            with self._get_connection() as conn:
+                conn.executemany(
+                    """UPDATE positions SET
+                       current_price=?, stop_loss_price=?, take_profit_price=?,
+                       unrealized_pnl=?, realized_pnl=?, status=?, closed_at=?,
+                       exit_order_id=?
+                       WHERE id=?""",
+                    [
+                        (
+                            p.current_price, p.stop_loss_price,
+                            p.take_profit_price, p.unrealized_pnl,
+                            p.realized_pnl, p.status.value,
+                            p.closed_at.isoformat() if p.closed_at else None,
+                            p.exit_order_id, p.id,
+                        )
+                        for p in positions
+                    ],
+                )
+                conn.commit()
+
     def get_open_positions(self) -> list[Position]:
         with self._get_connection() as conn:
             rows = conn.execute(

@@ -73,13 +73,15 @@ class Backtester:
             initial_balance: float = DEFAULT_INITIAL_BALANCE,
             stop_loss_pct: float = None,
             take_profit_pct: float = None,
-            historical_data: dict = None) -> BacktestResult:
+            historical_data: dict = None,
+            progress_callback=None) -> BacktestResult:
         """Execute a full backtest.
 
         Args:
             stop_loss_pct: Override config stop-loss (e.g. 0.03 for 3%). None = use config.
             take_profit_pct: Override config take-profit (e.g. 0.06 for 6%). None = use config.
             historical_data: Pre-fetched {symbol: DataFrame}. None = fetch internally.
+            progress_callback: Optional callback(pct: float) called during simulation.
         """
         logger.info(
             f"Starting backtest: strategy={strategy_name}, "
@@ -126,7 +128,13 @@ class Backtester:
 
         # Walk-forward simulation
         snapshots = []
+        total_steps = min_len - warmup
+
         for i in range(warmup, min_len):
+            if progress_callback:
+                progress = ((i - warmup) / total_steps) * 100
+                progress_callback(progress)
+
             # Build data windows up to current candle
             windows = {}
             current_prices = {}

@@ -45,25 +45,62 @@
                     </div>
                 </div>
                 <div class="form-row">
-                    <div class="form-group">
+                    <div class="form-group" style="flex: 2;">
                         <label>Symbols (comma-separated)</label>
                         <input type="text" id="bt-symbols" value="BTC/USDT" placeholder="BTC/USDT, ETH/USDT">
+                    </div>
+                    <div class="form-group" style="flex: 1;">
+                        <label>Initial Balance ($)</label>
+                        <input type="number" id="bt-initial-balance" value="10000" min="100" step="100">
                     </div>
                 </div>
 
                 <!-- Risk Management -->
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Initial Balance ($)</label>
-                        <input type="number" id="bt-initial-balance" value="10000" min="100" step="100">
-                    </div>
-                    <div class="form-group">
+                <div class="form-row sweep-param-row">
+                    <div class="form-group" style="flex: 1;">
                         <label>Stop Loss %</label>
-                        <input type="number" id="bt-stop-loss" value="3" min="0.1" max="50" step="0.1">
+                        <div class="param-input-row">
+                            <input type="number" id="bt-stop-loss" value="3" class="param-single" min="0.1" max="50" step="0.1">
+                            <label class="sweep-toggle">
+                                <input type="checkbox" class="sweep-check" data-key="stop_loss_pct"
+                                       onchange="toggleSweep('stop_loss_pct'); updateComboCount();">
+                                Sweep
+                            </label>
+                        </div>
                     </div>
-                    <div class="form-group">
+                    <div class="form-group sweep-range" id="sweep-stop_loss_pct" style="display:none; flex: 2;">
+                        <label>Range (Min / Max / Step)</label>
+                        <div class="sweep-range-inputs">
+                            <input type="number" class="sweep-min" id="sweep-min-stop_loss_pct" value="1" placeholder="Min" onchange="updateComboCount()">
+                            <span class="sweep-label">to</span>
+                            <input type="number" class="sweep-max" id="sweep-max-stop_loss_pct" value="5" placeholder="Max" onchange="updateComboCount()">
+                            <span class="sweep-label">step</span>
+                            <input type="number" class="sweep-step" id="sweep-step-stop_loss_pct" value="0.5" placeholder="Step" onchange="updateComboCount()">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-row sweep-param-row">
+                    <div class="form-group" style="flex: 1;">
                         <label>Take Profit %</label>
-                        <input type="number" id="bt-take-profit" value="6" min="0.1" max="100" step="0.1">
+                        <div class="param-input-row">
+                            <input type="number" id="bt-take-profit" value="6" class="param-single" min="0.1" max="100" step="0.1">
+                            <label class="sweep-toggle">
+                                <input type="checkbox" class="sweep-check" data-key="take_profit_pct"
+                                       onchange="toggleSweep('take_profit_pct'); updateComboCount();">
+                                Sweep
+                            </label>
+                        </div>
+                    </div>
+                    <div class="form-group sweep-range" id="sweep-take_profit_pct" style="display:none; flex: 2;">
+                        <label>Range (Min / Max / Step)</label>
+                        <div class="sweep-range-inputs">
+                            <input type="number" class="sweep-min" id="sweep-min-take_profit_pct" value="2" placeholder="Min" onchange="updateComboCount()">
+                            <span class="sweep-label">to</span>
+                            <input type="number" class="sweep-max" id="sweep-max-take_profit_pct" value="10" placeholder="Max" onchange="updateComboCount()">
+                            <span class="sweep-label">step</span>
+                            <input type="number" class="sweep-step" id="sweep-step-take_profit_pct" value="1" placeholder="Step" onchange="updateComboCount()">
+                        </div>
                     </div>
                 </div>
 
@@ -374,6 +411,7 @@
             const baseParams = {};
             const strategy = form.strategy;
 
+            // Strategy params
             (STRATEGY_PARAMS[strategy] || []).forEach(p => {
                 if (sweeps[p.key]) {
                     paramRanges[p.key] = {
@@ -382,7 +420,20 @@
                         step: sweeps[p.key].step,
                     };
                 } else {
-                    baseParams[p.key] = parseFloat(document.getElementById("bt-param-" + p.key).value);
+                    const el = document.getElementById("bt-param-" + p.key);
+                    if (el) baseParams[p.key] = parseFloat(el.value);
+                }
+            });
+
+            // Risk params (SL/TP)
+            ["stop_loss_pct", "take_profit_pct"].forEach(key => {
+                if (sweeps[key]) {
+                    // Convert percentage to decimal
+                    paramRanges[key] = {
+                        min: sweeps[key].min / 100,
+                        max: sweeps[key].max / 100,
+                        step: sweeps[key].step / 100,
+                    };
                 }
             });
 
@@ -592,7 +643,14 @@
 
         function formatParams(params) {
             if (!params) return "";
-            return Object.entries(params).map(([k, v]) => k + "=" + v).join(", ");
+            return Object.entries(params).map(([k, v]) => {
+                let val = v;
+                if (typeof v === 'number') {
+                    // Nice formatting for floats
+                    val = parseFloat(v.toFixed(6));
+                }
+                return k + "=" + val;
+            }).join(", ");
         }
 
         function formatStrategyName(name) {

@@ -649,8 +649,8 @@
                     // Nice formatting for floats
                     val = parseFloat(v.toFixed(6));
                 }
-                return k + "=" + val;
-            }).join(", ");
+                return `<span class="param-tag">${k}=${val}</span>`;
+            }).join(" ");
         }
 
         function formatStrategyName(name) {

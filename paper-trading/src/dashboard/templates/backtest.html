@@ -72,8 +72,15 @@
 
                 <div class="form-row" style="align-items: center;">
                     <button onclick="handleRun()" class="btn btn-primary" id="bt-run-btn">Run Backtest</button>
-                    <span id="bt-loading" style="display:none; margin-left: 1rem; color: var(--text-secondary);">Running...</span>
+                    <span id="bt-loading" style="display:none; margin-left: 1rem; color: var(--text-secondary);">Starting...</span>
                     <span id="bt-combo-count" style="margin-left: 1rem; font-size: 0.85rem; color: var(--text-secondary);"></span>
+                </div>
+
+                <div id="bt-progress-container" style="display:none; width: 100%; margin-top: 1rem;">
+                    <div style="width: 100%; background-color: #2a2a4e; border-radius: 4px; overflow: hidden;">
+                        <div id="bt-progress-bar" style="width: 0%; height: 20px; background-color: #00d4aa; transition: width 0.3s ease;"></div>
+                    </div>
+                    <div id="bt-progress-text" style="text-align: center; font-size: 0.85rem; color: #e0e0e0; margin-top: 0.5rem;">0%</div>
                 </div>
             </div>
         </section>
@@ -314,6 +321,7 @@
             const params = overrideParams || form.params;
 
             try {
+                // Start backtest
                 const resp = await fetch("/api/backtest", {
                     method: "POST",
                     headers: {"Content-Type": "application/json"},
@@ -328,21 +336,26 @@
                         take_profit_pct: form.takeProfit,
                     }),
                 });
-                const data = await resp.json();
-                if (resp.ok) {
-                    displayResults(data);
+
+                const startData = await resp.json();
+                if (!resp.ok) {
+                    throw new Error(startData.error || "Failed to start backtest");
+                }
+
+                // Poll for completion
+                await pollTask(startData.task_id, (result) => {
+                    displayResults(result);
                     addToComparison({
                         strategy: form.strategy,
                         params: params,
-                        total_return_pct: data.total_return_pct,
-                        win_rate: data.win_rate,
-                        total_trades: data.total_trades,
-                        max_drawdown_pct: data.max_drawdown_pct,
-                        avg_trade_pnl: data.avg_trade_pnl,
+                        total_return_pct: result.total_return_pct,
+                        win_rate: result.win_rate,
+                        total_trades: result.total_trades,
+                        max_drawdown_pct: result.max_drawdown_pct,
+                        avg_trade_pnl: result.avg_trade_pnl,
                     });
-                } else {
-                    alert("Backtest failed: " + (data.error || "Unknown error"));
-                }
+                });
+
             } catch (e) {
                 alert("Error: " + e.message);
             } finally {
@@ -374,6 +387,7 @@
             });
 
             try {
+                // Start sweep
                 const resp = await fetch("/api/backtest/sweep", {
                     method: "POST",
                     headers: {"Content-Type": "application/json"},
@@ -389,10 +403,16 @@
                         base_params: baseParams,
                     }),
                 });
-                const data = await resp.json();
-                if (resp.ok) {
+
+                const startData = await resp.json();
+                if (!resp.ok) {
+                    throw new Error(startData.error || "Failed to start sweep");
+                }
+
+                // Poll for completion
+                await pollTask(startData.task_id, (result) => {
                     // Add all results to comparison table
-                    (data.sweep_results || []).forEach(r => {
+                    (result.sweep_results || []).forEach(r => {
                         addToComparison({
                             strategy: r.strategy_name || strategy,
                             params: r.params,
@@ -405,14 +425,62 @@
                     });
                     // Scroll to comparison table
                     document.getElementById("bt-comparison-section").scrollIntoView({behavior: "smooth"});
-                } else {
-                    alert("Sweep failed: " + (data.error || "Unknown error"));
-                }
+                });
+
             } catch (e) {
                 alert("Error: " + e.message);
             } finally {
                 setLoading(false);
             }
+        }
+
+        // ==================== POLLING ====================
+
+        async function pollTask(taskId, onComplete) {
+            const progressContainer = document.getElementById("bt-progress-container");
+            const progressBar = document.getElementById("bt-progress-bar");
+            const progressText = document.getElementById("bt-progress-text");
+
+            progressContainer.style.display = "block";
+            progressBar.style.width = "0%";
+            progressText.textContent = "0%";
+
+            return new Promise((resolve, reject) => {
+                const intervalId = setInterval(async () => {
+                    try {
+                        const resp = await fetch(`/api/backtest/status/${taskId}`);
+                        if (!resp.ok) {
+                            // If 404, maybe task expired or server restarted?
+                            throw new Error("Failed to get task status");
+                        }
+
+                        const data = await resp.json();
+
+                        if (data.status === "completed") {
+                            clearInterval(intervalId);
+                            progressBar.style.width = "100%";
+                            progressText.textContent = "100%";
+                            setTimeout(() => {
+                                progressContainer.style.display = "none";
+                                onComplete(data.result);
+                                resolve();
+                            }, 500); // Short delay to show 100%
+                        } else if (data.status === "error") {
+                            clearInterval(intervalId);
+                            progressContainer.style.display = "none";
+                            reject(new Error(data.error_msg || "Unknown error during backtest"));
+                        } else {
+                            // Running
+                            progressBar.style.width = data.progress + "%";
+                            progressText.textContent = Math.round(data.progress) + "%";
+                        }
+                    } catch (e) {
+                        clearInterval(intervalId);
+                        progressContainer.style.display = "none";
+                        reject(e);
+                    }
+                }, 1000); // Poll every 1 second
+            });
         }
 
         // ==================== DISPLAY SINGLE RESULTS ====================

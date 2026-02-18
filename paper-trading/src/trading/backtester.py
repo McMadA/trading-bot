@@ -242,13 +242,15 @@ class Backtester:
             initial_balance: float = DEFAULT_INITIAL_BALANCE,
             stop_loss_pct: float = None,
             take_profit_pct: float = None,
-            historical_data: dict = None) -> BacktestResult:
+            historical_data: dict = None,
+            progress_callback=None) -> BacktestResult:
         """Execute a full backtest.
 
         Args:
             stop_loss_pct: Override config stop-loss (e.g. 0.03 for 3%). None = use config.
             take_profit_pct: Override config take-profit (e.g. 0.06 for 6%). None = use config.
             historical_data: Pre-fetched {symbol: DataFrame}. None = fetch internally.
+            progress_callback: Optional callback(pct: float) called during simulation.
         """
         logger.info(
             f"Starting backtest: strategy={strategy_name}, "
@@ -271,6 +273,123 @@ class Backtester:
             take_profit_pct=take_profit_pct,
             historical_data=historical_data
         )
+
+        # Determine the common index range
+        min_len = min(len(df) for df in historical_data.values())
+        warmup = max(
+            strategy_params.get("ema_period", DEFAULT_EMA_PERIOD),
+            strategy_params.get("sma_period", DEFAULT_SMA_PERIOD),
+            strategy_params.get("period", DEFAULT_RSI_PERIOD),
+            strategy_params.get("rsi_period", DEFAULT_RSI_PERIOD),
+        ) + 5  # Extra padding for indicator warmup
+
+        if min_len <= warmup:
+            logger.warning("Not enough data for warmup period")
+            return BacktestResult()
+
+        # Walk-forward simulation
+        snapshots = []
+        total_steps = min_len - warmup
+
+        for i in range(warmup, min_len):
+            if progress_callback:
+                progress = ((i - warmup) / total_steps) * 100
+                progress_callback(progress)
+
+            # Build data windows up to current candle
+            windows = {}
+            current_prices = {}
+            for symbol, df in historical_data.items():
+                window = df.iloc[: i + 1]
+                windows[symbol] = window
+                current_prices[symbol] = float(window.iloc[-1]["close"])
+
+            # Update portfolio positions
+            portfolio.update_positions(current_prices)
+            portfolio.check_pending_orders(current_prices)
+
+            # Run strategy
+            current_positions = {
+                symbol: portfolio.get_position(symbol)
+                for symbol in symbols
+            }
+            signals = strategy.generate_signals(windows, current_positions)
+
+            # Execute signals
+            for signal in signals:
+                price = current_prices.get(signal.symbol)
+                if price is None:
+                    continue
+
+                quantity = portfolio.calculate_position_size(
+                    signal.symbol, signal.side, price
+                )
+                if quantity <= 0:
+                    continue
+
+                order = portfolio.submit_order(
+                    symbol=signal.symbol,
+                    side=signal.side,
+                    order_type=OrderType.MARKET,
+                    quantity=quantity,
+                    price=price,
+                    strategy_name=strategy.name,
+                )
+
+                # Set SL/TP for buy orders
+                if (signal.side == OrderSide.BUY and order
+                        and order.status.value == "filled"):
+                    position = portfolio.get_position(signal.symbol)
+                    if position:
+                        position.stop_loss_price = price * (1 - sl_pct)
+                        position.take_profit_price = price * (1 + tp_pct)
+                        db.update_position(position)
+
+            # Record snapshot
+            total_value = portfolio.get_total_value(current_prices)
+            timestamp = historical_data[symbols[0]].iloc[i]["timestamp"]
+            snapshots.append({
+                "timestamp": timestamp.isoformat() if hasattr(timestamp, "isoformat") else str(timestamp),
+                "value": total_value,
+            })
+
+        # Compile results
+        result = BacktestResult()
+        result.equity_curve = snapshots
+        result.trades = db.get_trade_records(limit=10000)
+        result.total_trades = len(result.trades)
+
+        if result.total_trades > 0:
+            winning = sum(1 for t in result.trades if t.pnl > 0)
+            result.win_rate = (winning / result.total_trades) * 100
+            result.avg_trade_pnl = sum(t.pnl for t in result.trades) / result.total_trades
+        else:
+            result.win_rate = 0.0
+            result.avg_trade_pnl = 0.0
+
+        # Calculate total return
+        if snapshots:
+            final_value = snapshots[-1]["value"]
+            result.total_return_pct = ((final_value / initial_balance) - 1) * 100
+
+        # Calculate max drawdown
+        result.max_drawdown_pct = self._calculate_max_drawdown(snapshots)
+
+        # Store metadata for comparison
+        result.strategy_name = strategy_name
+        result.strategy_params = dict(strategy_params)
+        result.initial_balance = initial_balance
+        result.stop_loss_pct = sl_pct
+        result.take_profit_pct = tp_pct
+
+        logger.info(
+            f"Backtest complete: {result.total_trades} trades, "
+            f"return={result.total_return_pct:.2f}%, "
+            f"win_rate={result.win_rate:.1f}%, "
+            f"max_drawdown={result.max_drawdown_pct:.2f}%"
+        )
+
+        return result
 
     def _create_strategy(self, name: str, params: dict) -> BaseStrategy:
         return _create_strategy(name, params)

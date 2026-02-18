@@ -1,6 +1,9 @@
 """Flask routes — API endpoints and page routes."""
 
 import logging
+import threading
+import uuid
+import time
 import itertools
 from concurrent.futures import ProcessPoolExecutor
 from flask import render_template, jsonify, request
@@ -8,6 +11,10 @@ from ..trading.backtester import run_backtest_simulation
 
 logger = logging.getLogger(__name__)
 
+# Global dictionary to store backtest/sweep tasks
+# Structure: { task_id: { "status": "running"|"completed"|"error", "progress": int, "result": dict, "error_msg": str, "timestamp": float } }
+BACKTEST_TASKS = {}
+MAX_TASK_AGE_SECONDS = 3600  # Clean up tasks older than 1 hour
 # Global variable to hold historical data in worker processes
 _worker_historical_data = None
 
@@ -38,6 +45,129 @@ def register_routes(app):
 
     def _get_config():
         return app.config["app_config"]
+
+    def _cleanup_old_tasks():
+        now = time.time()
+        to_remove = [tid for tid, task in BACKTEST_TASKS.items() if now - task["timestamp"] > MAX_TASK_AGE_SECONDS]
+        for tid in to_remove:
+            if tid in BACKTEST_TASKS:
+                del BACKTEST_TASKS[tid]
+
+    def _run_backtest_task(task_id, config, exchange, kwargs):
+        from ..trading.backtester import Backtester
+        try:
+            backtester = Backtester(config, exchange)
+
+            def progress_cb(pct):
+                if task_id in BACKTEST_TASKS:
+                    BACKTEST_TASKS[task_id]["progress"] = round(pct, 1)
+
+            # Inject callback
+            kwargs["progress_callback"] = progress_cb
+
+            result = backtester.run(**kwargs)
+
+            if task_id in BACKTEST_TASKS:
+                BACKTEST_TASKS[task_id]["status"] = "completed"
+                BACKTEST_TASKS[task_id]["progress"] = 100
+                BACKTEST_TASKS[task_id]["result"] = _serialize_backtest_result(result)
+        except Exception as e:
+            logger.error(f"Backtest task {task_id} failed: {e}")
+            if task_id in BACKTEST_TASKS:
+                BACKTEST_TASKS[task_id]["status"] = "error"
+                BACKTEST_TASKS[task_id]["error_msg"] = str(e)
+
+    def _run_sweep_task(task_id, config, exchange, kwargs):
+        from ..trading.backtester import Backtester
+        import itertools
+
+        try:
+            strategy_name = kwargs.get("strategy_name")
+            symbols = kwargs.get("symbols")
+            timeframe = kwargs.get("timeframe")
+            days = kwargs.get("days")
+            param_ranges = kwargs.get("param_ranges")
+            base_params = kwargs.get("base_params")
+
+            # Generate combinations
+            param_names = list(param_ranges.keys())
+            param_value_lists = []
+            for name in param_names:
+                r = param_ranges[name]
+                min_val = r["min"]
+                max_val = r["max"]
+                step = r["step"]
+                values = []
+                v = min_val
+                while v <= max_val + 1e-9:
+                    values.append(round(v, 6))
+                    v += step
+                param_value_lists.append(values)
+
+            combinations = list(itertools.product(*param_value_lists))
+            total_combos = len(combinations)
+
+            backtester = Backtester(config, exchange)
+            historical_data = backtester.fetch_historical_data(symbols, timeframe, days)
+
+            if not historical_data:
+                raise ValueError("No historical data available")
+
+            results = []
+            for i, combo in enumerate(combinations):
+                if task_id not in BACKTEST_TASKS:
+                    break  # Task deleted?
+
+                # Update progress
+                progress = (i / total_combos) * 100
+                BACKTEST_TASKS[task_id]["progress"] = round(progress, 1)
+
+                params = {**base_params, **dict(zip(param_names, combo))}
+                try:
+                    # Run backtest (synchronously, no inner progress for sweep)
+                    res = backtester.run(
+                        strategy_name=strategy_name,
+                        strategy_params=params,
+                        symbols=symbols,
+                        timeframe=timeframe,
+                        days=days,
+                        initial_balance=kwargs.get("initial_balance"),
+                        stop_loss_pct=kwargs.get("stop_loss_pct"),
+                        take_profit_pct=kwargs.get("take_profit_pct"),
+                        historical_data=historical_data
+                    )
+                    results.append({
+                        "params": params,
+                        "total_return_pct": res.total_return_pct,
+                        "win_rate": res.win_rate,
+                        "max_drawdown_pct": res.max_drawdown_pct,
+                        "total_trades": res.total_trades,
+                        "avg_trade_pnl": res.avg_trade_pnl,
+                        "strategy_name": strategy_name,
+                    })
+                except Exception as e:
+                    logger.warning(f"Sweep combination {params} failed: {e}")
+
+            # Sort results
+            results.sort(key=lambda r: r["total_return_pct"], reverse=True)
+
+            if task_id in BACKTEST_TASKS:
+                BACKTEST_TASKS[task_id]["status"] = "completed"
+                BACKTEST_TASKS[task_id]["progress"] = 100
+                BACKTEST_TASKS[task_id]["result"] = {
+                    "sweep_results": results,
+                    "total_combinations": total_combos,
+                    "strategy": strategy_name,
+                    "symbols": symbols,
+                    "timeframe": timeframe,
+                    "days": days,
+                }
+
+        except Exception as e:
+            logger.error(f"Sweep task {task_id} failed: {e}")
+            if task_id in BACKTEST_TASKS:
+                BACKTEST_TASKS[task_id]["status"] = "error"
+                BACKTEST_TASKS[task_id]["error_msg"] = str(e)
 
     # ==================== PAGE ROUTES ====================
 
@@ -158,7 +288,6 @@ def register_routes(app):
 
     @app.route("/api/backtest", methods=["POST"])
     def api_run_backtest():
-        from ..trading.backtester import Backtester
         data = request.get_json()
         if not data:
             return jsonify({"error": "Missing request body"}), 400
@@ -166,32 +295,36 @@ def register_routes(app):
         engine = _get_engine()
         config = _get_config()
 
-        backtester = Backtester(config, engine._exchange)
-        result = backtester.run(
-            strategy_name=data.get("strategy", "ema_sma_crossover"),
-            strategy_params=data.get("params", {}),
-            symbols=data.get("symbols", ["BTC/USDT"]),
-            timeframe=data.get("timeframe", "1h"),
-            days=data.get("days", 30),
-            initial_balance=data.get("initial_balance", 10000.0),
-            stop_loss_pct=data.get("stop_loss_pct"),
-            take_profit_pct=data.get("take_profit_pct"),
-        )
+        # Cleanup old tasks
+        _cleanup_old_tasks()
 
-        return jsonify({
-            "total_return_pct": result.total_return_pct,
-            "win_rate": result.win_rate,
-            "max_drawdown_pct": result.max_drawdown_pct,
-            "total_trades": result.total_trades,
-            "avg_trade_pnl": result.avg_trade_pnl,
-            "equity_curve": result.equity_curve,
-            "trades": [_serialize_trade(t) for t in result.trades],
-            "strategy_name": result.strategy_name,
-            "strategy_params": result.strategy_params,
-            "initial_balance": result.initial_balance,
-            "stop_loss_pct": result.stop_loss_pct,
-            "take_profit_pct": result.take_profit_pct,
-        })
+        task_id = str(uuid.uuid4())
+        BACKTEST_TASKS[task_id] = {
+            "status": "running",
+            "progress": 0,
+            "result": None,
+            "timestamp": time.time()
+        }
+
+        kwargs = {
+            "strategy_name": data.get("strategy", "ema_sma_crossover"),
+            "strategy_params": data.get("params", {}),
+            "symbols": data.get("symbols", ["BTC/USDT"]),
+            "timeframe": data.get("timeframe", "1h"),
+            "days": data.get("days", 30),
+            "initial_balance": data.get("initial_balance", 10000.0),
+            "stop_loss_pct": data.get("stop_loss_pct"),
+            "take_profit_pct": data.get("take_profit_pct"),
+        }
+
+        thread = threading.Thread(
+            target=_run_backtest_task,
+            args=(task_id, config, engine._exchange, kwargs),
+            daemon=True
+        )
+        thread.start()
+
+        return jsonify({"task_id": task_id, "status": "running"})
 
     @app.route("/api/backtest/sweep", methods=["POST"])
     def api_run_backtest_sweep():
@@ -205,6 +338,42 @@ def register_routes(app):
         engine = _get_engine()
         config = _get_config()
 
+        # Cleanup old tasks
+        _cleanup_old_tasks()
+
+        task_id = str(uuid.uuid4())
+        BACKTEST_TASKS[task_id] = {
+            "status": "running",
+            "progress": 0,
+            "result": None,
+            "timestamp": time.time()
+        }
+
+        kwargs = {
+            "strategy_name": data.get("strategy", "ema_sma_crossover"),
+            "symbols": data.get("symbols", ["BTC/USDT"]),
+            "timeframe": data.get("timeframe", "1h"),
+            "days": data.get("days", 30),
+            "initial_balance": data.get("initial_balance", 10000.0),
+            "stop_loss_pct": data.get("stop_loss_pct"),
+            "take_profit_pct": data.get("take_profit_pct"),
+            "param_ranges": data.get("param_ranges", {}),
+            "base_params": data.get("base_params", {}),
+        }
+
+        thread = threading.Thread(
+            target=_run_sweep_task,
+            args=(task_id, config, engine._exchange, kwargs),
+            daemon=True
+        )
+        thread.start()
+
+        return jsonify({"task_id": task_id, "status": "running"})
+
+    @app.route("/api/backtest/status/<task_id>")
+    def api_backtest_status(task_id):
+        if task_id not in BACKTEST_TASKS:
+            return jsonify({"error": "Task not found"}), 404
         strategy_name = data.get("strategy", "ema_sma_crossover")
         symbols = data.get("symbols", ["BTC/USDT"])
         timeframe = data.get("timeframe", "1h")
@@ -295,16 +464,31 @@ def register_routes(app):
         # Sort by total return descending
         results.sort(key=lambda r: r["total_return_pct"], reverse=True)
 
+        task = BACKTEST_TASKS[task_id]
         return jsonify({
-            "sweep_results": results,
-            "total_combinations": len(combinations),
-            "strategy": strategy_name,
-            "symbols": symbols,
-            "timeframe": timeframe,
-            "days": days,
+            "status": task["status"],
+            "progress": task["progress"],
+            "result": task.get("result"),
+            "error_msg": task.get("error_msg"),
         })
 
     # ==================== SERIALIZATION HELPERS ====================
+
+    def _serialize_backtest_result(result):
+        return {
+            "total_return_pct": result.total_return_pct,
+            "win_rate": result.win_rate,
+            "max_drawdown_pct": result.max_drawdown_pct,
+            "total_trades": result.total_trades,
+            "avg_trade_pnl": result.avg_trade_pnl,
+            "equity_curve": result.equity_curve,
+            "trades": [_serialize_trade(t) for t in result.trades],
+            "strategy_name": result.strategy_name,
+            "strategy_params": result.strategy_params,
+            "initial_balance": result.initial_balance,
+            "stop_loss_pct": result.stop_loss_pct,
+            "take_profit_pct": result.take_profit_pct,
+        }
 
     def _serialize_position(pos, current_prices):
         return {

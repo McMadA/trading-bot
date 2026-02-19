@@ -649,8 +649,8 @@
                     // Nice formatting for floats
                     val = parseFloat(v.toFixed(6));
                 }
-                return k + "=" + val;
-            }).join(", ");
+                return `<span class="param-tag">${k}=${val}</span>`;
+            }).join(" ");
         }
 
         function formatStrategyName(name) {
@@ -671,8 +671,23 @@
         function runDetailedBacktest(params) {
             // Fill in form values from the params
             for (const [key, value] of Object.entries(params)) {
-                const el = document.getElementById("bt-param-" + key);
-                if (el) el.value = value;
+                // Try strategy param ID
+                let el = document.getElementById("bt-param-" + key);
+
+                // Try risk param IDs
+                if (!el) {
+                    if (key === "stop_loss_pct") el = document.getElementById("bt-stop-loss");
+                    if (key === "take_profit_pct") el = document.getElementById("bt-take-profit");
+                }
+
+                if (el) {
+                    // Check if it's a percentage that needs scaling (SL/TP come as decimals like 0.03)
+                    if (key === "stop_loss_pct" || key === "take_profit_pct") {
+                        el.value = parseFloat((value * 100).toFixed(2));
+                    } else {
+                        el.value = value;
+                    }
+                }
             }
             // Run single backtest with those params
             runBacktest(params);

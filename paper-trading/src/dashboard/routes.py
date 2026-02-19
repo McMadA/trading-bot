@@ -190,7 +190,8 @@ def run_sweep_task(task_id, config, exchange, kwargs):
                     initial_balance=kwargs.get("initial_balance"),
                     stop_loss_pct=current_sl,
                     take_profit_pct=current_tp,
-                    historical_data=historical_data
+                    historical_data=historical_data,
+                    log_results=False,
                 )
 
                 # Merge SL/TP into params for result reporting
@@ -212,6 +213,21 @@ def run_sweep_task(task_id, config, exchange, kwargs):
 
         # Sort results
         results.sort(key=lambda r: r["total_return_pct"], reverse=True)
+
+        logger.info(f"Sweep complete: {total_combos} combinations tested")
+        if results:
+            logger.info(
+                f"Best: return={results[0]['total_return_pct']:.2f}%, "
+                f"win_rate={results[0]['win_rate']:.1f}%, "
+                f"trades={results[0]['total_trades']}, "
+                f"params={results[0]['params']}"
+            )
+            for i, r in enumerate(results[:5], 1):
+                logger.info(
+                    f"  #{i}: return={r['total_return_pct']:.2f}%  "
+                    f"win={r['win_rate']:.1f}%  trades={r['total_trades']}  "
+                    f"dd={r['max_drawdown_pct']:.2f}%  params={r['params']}"
+                )
 
         if task_id in BACKTEST_TASKS:
             BACKTEST_TASKS[task_id]["status"] = "completed"

@@ -462,9 +462,10 @@
 
                 // Poll for completion
                 await pollTask(startData.task_id, (result) => {
-                    // Add all results to comparison table
+                    // Batch-add all sweep results, then render once
                     (result.sweep_results || []).forEach(r => {
-                        addToComparison({
+                        runCounter++;
+                        comparisonResults.push({
                             strategy: r.strategy_name || strategy,
                             params: r.params,
                             total_return_pct: r.total_return_pct,
@@ -472,8 +473,10 @@
                             total_trades: r.total_trades,
                             max_drawdown_pct: r.max_drawdown_pct,
                             avg_trade_pnl: r.avg_trade_pnl,
+                            run: runCounter,
                         });
                     });
+                    renderComparisonTable();
                     // Scroll to comparison table
                     document.getElementById("bt-comparison-section").scrollIntoView({behavior: "smooth"});
                 });
@@ -611,15 +614,15 @@
             });
 
             const tbody = document.querySelector("#bt-comparison-table tbody");
-            tbody.innerHTML = "";
 
+            const rows = [];
             sorted.forEach((r, i) => {
                 const returnClass = r.total_return_pct >= 0 ? "positive" : "negative";
                 const rowClass = i === bestIdx ? "best-result" : "";
                 const paramsStr = formatParams(r.params);
                 const paramsJson = JSON.stringify(r.params).replace(/"/g, "&quot;");
 
-                tbody.innerHTML += `<tr class="${rowClass}">
+                rows.push(`<tr class="${rowClass}">
                     <td>${r.run}</td>
                     <td>${formatStrategyName(r.strategy)}</td>
                     <td class="params-cell">${paramsStr}</td>
@@ -629,8 +632,9 @@
                     <td class="negative">${r.max_drawdown_pct.toFixed(2)}%</td>
                     <td>${r.avg_trade_pnl.toFixed(2)}</td>
                     <td><button class="btn btn-secondary btn-small" onclick='runDetailedBacktest(${paramsJson})'>Details</button></td>
-                </tr>`;
+                </tr>`);
             });
+            tbody.innerHTML = rows.join("");
 
             // Update sort indicators
             document.querySelectorAll("#bt-comparison-table th.sortable").forEach(th => {

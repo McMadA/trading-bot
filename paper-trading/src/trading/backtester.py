@@ -79,7 +79,7 @@ def run_backtest_simulation(config: dict, strategy_name: str, strategy_params: d
                             symbols: list[str], timeframe: str, days: int,
                             initial_balance: float, stop_loss_pct: float,
                             take_profit_pct: float, historical_data: dict,
-                            progress_callback=None) -> BacktestResult:
+                            progress_callback=None, log_results=True) -> BacktestResult:
     """Execute a full backtest simulation independently of Backtester instance."""
 
     # Resolve SL/TP values
@@ -218,12 +218,13 @@ def run_backtest_simulation(config: dict, strategy_name: str, strategy_params: d
     result.stop_loss_pct = sl_pct
     result.take_profit_pct = tp_pct
 
-    logger.info(
-        f"Backtest complete: {result.total_trades} trades, "
-        f"return={result.total_return_pct:.2f}%, "
-        f"win_rate={result.win_rate:.1f}%, "
-        f"max_drawdown={result.max_drawdown_pct:.2f}%"
-    )
+    if log_results:
+        logger.info(
+            f"Backtest complete: {result.total_trades} trades, "
+            f"return={result.total_return_pct:.2f}%, "
+            f"win_rate={result.win_rate:.1f}%, "
+            f"max_drawdown={result.max_drawdown_pct:.2f}%"
+        )
 
     return result
 
@@ -257,7 +258,8 @@ class Backtester:
             stop_loss_pct: float = None,
             take_profit_pct: float = None,
             historical_data: dict = None,
-            progress_callback=None) -> BacktestResult:
+            progress_callback=None,
+            log_results=True) -> BacktestResult:
         """Execute a full backtest.
 
         Args:
@@ -265,11 +267,13 @@ class Backtester:
             take_profit_pct: Override config take-profit (e.g. 0.06 for 6%). None = use config.
             historical_data: Pre-fetched {symbol: DataFrame}. None = fetch internally.
             progress_callback: Optional callback(pct: float) called during simulation.
+            log_results: If False, suppress per-run INFO logs (useful for sweeps).
         """
-        logger.info(
-            f"Starting backtest: strategy={strategy_name}, "
-            f"symbols={symbols}, timeframe={timeframe}, days={days}"
-        )
+        if log_results:
+            logger.info(
+                f"Starting backtest: strategy={strategy_name}, "
+                f"symbols={symbols}, timeframe={timeframe}, days={days}"
+            )
 
         # Fetch historical data for all symbols (or use pre-fetched)
         if historical_data is None:
@@ -286,7 +290,8 @@ class Backtester:
             stop_loss_pct=stop_loss_pct,
             take_profit_pct=take_profit_pct,
             historical_data=historical_data,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            log_results=log_results,
         )
 
     def _create_strategy(self, name: str, params: dict) -> BaseStrategy:
